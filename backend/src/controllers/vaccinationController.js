@@ -13,12 +13,17 @@ const getVaccinations = async (req, res) => {
 };
 
 const createVaccination = async (req, res) => {
-  const { animal_id, vaccine_id, administered_by, stock_id, date_administered } = req.body;
+  const { animal_id, vaccine_id, administered_by, stock_id, dosage_ml, date_administered } = req.body;
   try {
     // 1. Check if animal is Active
     const animal = await prisma.animal.findUnique({ where: { animal_id } });
     if (!animal || animal.status !== 'Active') {
       return res.status(400).json({ error: `Cannot vaccinate animal with status: ${animal?.status || 'Unknown'}` });
+    }
+    
+    // 1.5. Medical Safety (Pregnancy Block)
+    if (animal.is_pregnant) {
+      return res.status(400).json({ error: 'Medical Block: Cannot vaccinate a pregnant animal.' });
     }
 
     // 2. Get vaccine validity period
@@ -41,6 +46,7 @@ const createVaccination = async (req, res) => {
         vaccine_id,
         administered_by,
         stock_id,
+        dosage_ml: parseFloat(dosage_ml),
         date_administered: new Date(date_administered),
         next_due_date,
       },

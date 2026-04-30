@@ -12,10 +12,10 @@ const getAnimals = async (req, res) => {
 };
 
 const createAnimal = async (req, res) => {
-  const { nickname, animal_type, age, gender, farm_id, status } = req.body;
+  const { nickname, animal_type, age, biological_type, is_pregnant, farm_id, status } = req.body;
   try {
     const animal = await prisma.animal.create({
-      data: { nickname, animal_type, age, gender, farm_id, status: status || 'Active' },
+      data: { nickname, animal_type, age, biological_type, is_pregnant, farm_id, status: status || 'Active' },
     });
     res.status(201).json(animal);
   } catch (error) {
@@ -25,11 +25,11 @@ const createAnimal = async (req, res) => {
 
 const updateAnimal = async (req, res) => {
   const { id } = req.params;
-  const { nickname, animal_type, age, gender, farm_id, status } = req.body;
+  const { nickname, animal_type, age, biological_type, is_pregnant, farm_id, status } = req.body;
   try {
     const animal = await prisma.animal.update({
       where: { animal_id: parseInt(id) },
-      data: { nickname, animal_type, age, gender, farm_id, status },
+      data: { nickname, animal_type, age, biological_type, is_pregnant, farm_id, status },
     });
     res.json(animal);
   } catch (error) {
@@ -83,4 +83,22 @@ const generateAnimalIDCard = async (req, res) => {
   }
 };
 
-module.exports = { getAnimals, createAnimal, updateAnimal, deleteAnimal, generateAnimalIDCard };
+const updateAnimalStatus = async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const validStatuses = ['Active', 'Sold', 'Deceased'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value' });
+  }
+  try {
+    const animal = await prisma.animal.update({
+      where: { animal_id: parseInt(id) },
+      data: { status },
+    });
+    res.json(animal);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+module.exports = { getAnimals, createAnimal, updateAnimal, deleteAnimal, generateAnimalIDCard, updateAnimalStatus };;

@@ -31,18 +31,26 @@ model Farm {
   schedules VaccinationSchedule[]
 }
 
+enum AnimalStatus {
+  Active
+  Sold
+  Deceased
+}
+
 model Animal {
   animal_id   Int      @id @default(autoincrement())
   nickname    String?
-  animal_type String
-  age         Int
-  gender      String
-  status      String   @default("Active")
+  animal_type      String
+  biological_type  String       @default("Unknown")
+  is_pregnant      Boolean      @default(false)
+  age              Int
+  status           AnimalStatus @default(Active)
   farm_id     Int
   created_at  DateTime @default(now())
 
   farm         Farm          @relation(fields: [farm_id], references: [farm_id])
   vaccinations Vaccination[]
+  schedules    VaccinationSchedule[]
   alerts       Alert[]
 }
 
@@ -59,20 +67,10 @@ model Vaccine {
   schedules    VaccinationSchedule[]
 }
 
-model Supplier {
-  supplier_id   Int      @id @default(autoincrement())
-  supplier_name String
-  phone         String
-  address       String
-  created_at    DateTime @default(now())
-
-  stocks VaccineStock[]
-}
-
 model VaccineStock {
   stock_id           Int      @id @default(autoincrement())
   vaccine_id         Int
-  supplier_id        Int
+  supplier_name      String?
   batch_number       String?
   quantity_purchased Int
   quantity_remaining Int
@@ -82,7 +80,6 @@ model VaccineStock {
   created_at         DateTime @default(now())
 
   vaccine   Vaccine   @relation(fields: [vaccine_id], references: [vaccine_id])
-  supplier  Supplier  @relation(fields: [supplier_id], references: [supplier_id])
 
   vaccinations Vaccination[]
 }
@@ -93,6 +90,7 @@ model Vaccination {
   vaccine_id       Int
   administered_by  Int
   stock_id         Int
+  dosage_ml        Float        @default(0)
   date_administered DateTime
   next_due_date    DateTime
   created_at       DateTime @default(now())
@@ -107,12 +105,15 @@ model VaccinationSchedule {
   schedule_id    Int      @id @default(autoincrement())
   vaccine_id     Int
   farm_id        Int?
+  animal_id      Int?
   schedule_type  String
   scheduled_date DateTime
+  status         String   @default("Pending")
   created_at     DateTime @default(now())
 
   vaccine Vaccine @relation(fields: [vaccine_id], references: [vaccine_id])
   farm    Farm?   @relation(fields: [farm_id], references: [farm_id])
+  animal  Animal? @relation(fields: [animal_id], references: [animal_id])
 }
 
 model Alert {

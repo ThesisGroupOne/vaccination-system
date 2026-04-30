@@ -19,11 +19,14 @@ exports.getStats = async (req, res) => {
             where: { status: 'Pending' }
         });
 
+        const totalVaccinations = await prisma.vaccination.count();
+
         res.json({
             totalAnimals,
             totalVaccines,
             totalStaff,
-            medicalAlerts
+            medicalAlerts,
+            totalVaccinations
         });
     } catch (error) {
         console.error(error);

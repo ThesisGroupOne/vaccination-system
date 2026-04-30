@@ -4,7 +4,7 @@ const prisma = require(path.join(__dirname, '../../config/db'));
 const getStocks = async (req, res) => {
   try {
     const stocks = await prisma.vaccineStock.findMany({
-      include: { vaccine: true, supplier: true },
+      include: { vaccine: true },
     });
     res.json(stocks);
   } catch (error) {
@@ -13,12 +13,12 @@ const getStocks = async (req, res) => {
 };
 
 const createStock = async (req, res) => {
-  const { vaccine_id, supplier_id, batch_number, quantity_purchased, purchase_price, purchase_date, expiry_date } = req.body;
+  const { vaccine_id, supplier_name, batch_number, quantity_purchased, purchase_price, purchase_date, expiry_date } = req.body;
   try {
     const stock = await prisma.vaccineStock.create({
       data: {
         vaccine_id,
-        supplier_id,
+        supplier_name,
         batch_number,
         quantity_purchased,
         quantity_remaining: quantity_purchased,
