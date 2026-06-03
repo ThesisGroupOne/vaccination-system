@@ -90,40 +90,40 @@ export default function ReportIssueForm() {
     };
 
     return (
-        <Card className="rounded-2xl border-[#2FA4D7]/20 shadow-lg bg-background overflow-hidden border-2">
-            <CardHeader className="bg-[#2FA4D7]/5 pb-4">
+        <Card className="rounded-[20px] border-none shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] bg-white overflow-hidden">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-gray-50 p-6 bg-white">
                 <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-[#2FA4D7] text-white flex items-center justify-center shadow-lg shadow-[#2FA4D7]/30">
-                        <AlertCircleIcon className="h-5 w-5" />
+                    <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                        <AlertCircleIcon className="w-6 h-6" />
                     </div>
-                    <div>
-                        <CardTitle className="text-lg font-bold text-[#2FA4D7]">Report Observation</CardTitle>
-                        <CardDescription className="text-xs">Notify the veterinarian about animal symptoms.</CardDescription>
+                    <div className="flex flex-col space-y-0.5">
+                        <CardTitle className="text-base font-extrabold text-slate-800">Report Observation</CardTitle>
+                        <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">Notify the veterinarian about animal symptoms.</CardDescription>
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="pt-6 space-y-5">
+            <CardContent className="p-6 space-y-5">
                 <div className="space-y-2">
-                    <Label htmlFor="animal" className="text-sm font-semibold">Select Animal</Label>
+                    <Label htmlFor="animal" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Select Animal</Label>
                     <Select
                         value={formData.animal_id}
                         onValueChange={v => setFormData({ ...formData, animal_id: v })}
                         disabled={isLoadingAnimals}
                     >
-                        <SelectTrigger className="rounded-xl border-muted-foreground/20 h-11 focus:ring-[#2FA4D7]">
+                        <SelectTrigger className="rounded-xl bg-gray-50/50 border border-gray-200 h-11 text-xs font-medium focus-visible:ring-amber-500">
                             <SelectValue placeholder={isLoadingAnimals ? "Loading animals..." : "Choose an animal"} />
                         </SelectTrigger>
-                        <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white translate-y-1 max-h-[300px]">
+                        <SelectContent className="rounded-xl border-gray-200 shadow-xl bg-white max-h-[300px]">
                             {animals.map(animal => (
                                 <SelectItem 
                                     key={animal.animal_id} 
                                     value={animal.animal_id.toString()}
-                                    className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors"
+                                    className="rounded-lg m-1 cursor-pointer py-2 text-xs font-bold hover:bg-slate-50"
                                 >
                                     <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="text-[10px] bg-slate-50">#{animal.animal_id}</Badge>
-                                        <span className="font-medium text-slate-700">{animal.nickname || 'Unnamed'}</span>
-                                        <span className="text-xs text-slate-400">({animal.animal_type})</span>
+                                        <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold rounded-full px-2 py-0.5 bg-slate-50 border-slate-200">#{animal.animal_id}</Badge>
+                                        <span className="font-bold text-slate-800">{animal.nickname || 'Unnamed'}</span>
+                                        <span className="text-[10px] text-slate-500 font-medium">({animal.animal_type})</span>
                                     </div>
                                 </SelectItem>
                             ))}
@@ -131,23 +131,23 @@ export default function ReportIssueForm() {
                     </Select>
                 </div>
                 <div className="space-y-2">
-                    <Label htmlFor="symptoms" className="text-sm font-semibold">Observations / Symptoms</Label>
+                    <Label htmlFor="symptoms" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Observations / Symptoms</Label>
                     <Textarea
                         id="symptoms"
                         placeholder="Describe what you see (e.g., coughing, not eating, limping...)"
-                        className="min-h-[120px] rounded-xl border-muted-foreground/20 focus:ring-[#2FA4D7]"
+                        className="min-h-[120px] rounded-xl bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-amber-500"
                         value={formData.symptoms}
                         onChange={e => setFormData({ ...formData, symptoms: e.target.value })}
                     />
                 </div>
             </CardContent>
-            <CardFooter className="bg-muted/5 border-t border-muted/20 py-4">
+            <CardFooter className="bg-white border-t border-gray-50 p-6">
                 <Button
-                    className="w-full rounded-xl bg-[#2FA4D7] hover:bg-[#2FA4D7]/90 text-white font-bold h-11 shadow-lg shadow-[#2FA4D7]/20"
+                    className="w-full rounded-xl bg-brand-primary hover:bg-brand-primary-hover text-white font-semibold h-11 shadow-md text-sm"
                     disabled={isSubmitting || isLoadingAnimals}
                     onClick={handleSubmit}
                 >
-                    {isSubmitting ? <Loader2Icon className="h-5 w-5 animate-spin mr-2" /> : <SendIcon className="h-5 w-5 mr-2" />}
+                    {isSubmitting ? <Loader2Icon className="h-5 w-5 animate-spin mr-2" /> : <SendIcon className="h-4 w-4 mr-2" />}
                     Submit Alert
                 </Button>
             </CardFooter>

@@ -78,32 +78,32 @@ export default function WorkerAlertsTable() {
   }, []);
 
   return (
-    <Card className="rounded-2xl border-none shadow-xl bg-white overflow-hidden">
-      <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4 pt-5 px-6">
-        <div className="flex items-center justify-between">
+    <Card className="rounded-[20px] border-none shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] bg-white overflow-hidden">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-gray-50 p-6 bg-white">
+        <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-              <ActivityIcon className="h-5 w-5" />
+            <div className="w-12 h-12 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
+              <ActivityIcon className="w-6 h-6" />
             </div>
-            <div>
-              <CardTitle className="text-lg font-semibold text-slate-800">My Medical Alerts</CardTitle>
-              <CardDescription className="text-xs text-slate-500">Track the status of symptoms you reported.</CardDescription>
+            <div className="flex flex-col space-y-0.5">
+              <CardTitle className="text-base font-extrabold text-slate-800">My Medical Alerts</CardTitle>
+              <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">Track the status of symptoms you reported.</CardDescription>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchAlerts} className="rounded-lg h-9">
+          <Button variant="outline" size="sm" onClick={fetchAlerts} className="rounded-lg h-9 text-xs font-semibold border-gray-200">
             Refresh
           </Button>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-b-slate-100 bg-slate-50/50">
-              <TableHead className="pl-6 font-semibold">Animal</TableHead>
-              <TableHead className="font-semibold">Symptoms</TableHead>
-              <TableHead className="font-semibold">Date</TableHead>
-              <TableHead className="font-semibold">Status</TableHead>
-              <TableHead className="text-right pr-6 font-semibold">Actions</TableHead>
+          <TableHeader className="bg-gray-50/50">
+            <TableRow className="hover:bg-transparent border-b border-gray-50">
+              <TableHead className="pl-6 h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Animal</TableHead>
+              <TableHead className="h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Symptoms</TableHead>
+              <TableHead className="h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Date</TableHead>
+              <TableHead className="h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Status</TableHead>
+              <TableHead className="text-right pr-6 h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -115,44 +115,44 @@ export default function WorkerAlertsTable() {
               </TableRow>
             ) : alerts.length > 0 ? (
               alerts.map((alert) => (
-                <TableRow key={alert.alert_id} className="hover:bg-slate-50/50 transition-colors border-b-slate-50">
-                  <TableCell className="pl-6">
+                <TableRow key={alert.alert_id} className="hover:bg-slate-50 transition-colors border-b border-gray-50 group">
+                  <TableCell className="pl-6 py-3">
                     <div className="flex flex-col">
-                      <span className="font-medium text-slate-700">
+                      <span className="font-bold text-slate-800 text-xs">
                         {alert.animal?.nickname || `Animal #${alert.animal_id}`}
                       </span>
-                      <span className="text-[10px] text-slate-400">ID: {alert.animal_id} • {alert.animal?.animal_type}</span>
+                      <span className="text-[10px] text-slate-500 font-medium">ID: {alert.animal_id} • {alert.animal?.animal_type}</span>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-slate-600 max-w-[200px] truncate block" title={alert.symptoms}>
+                  <TableCell className="py-3">
+                    <span className="text-xs text-slate-600 font-medium max-w-[200px] truncate block" title={alert.symptoms}>
                       {alert.symptoms}
                     </span>
                   </TableCell>
-                  <TableCell className="text-sm text-slate-500">
+                  <TableCell className="text-xs font-bold text-slate-500 py-3">
                     {new Date(alert.created_at).toLocaleDateString()}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="py-3">
                     {alert.status === 'Pending' ? (
-                      <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200">Pending</Badge>
+                      <Badge variant="outline" className="rounded-full font-bold px-2 py-0.5 text-[10px] uppercase tracking-wider bg-orange-50 text-orange-600 border-orange-200">Pending</Badge>
                     ) : alert.status === 'Scheduled' ? (
-                      <Badge variant="outline" className="bg-blue-50 text-blue-600 border-blue-200">Scheduled</Badge>
+                      <Badge variant="outline" className="rounded-full font-bold px-2 py-0.5 text-[10px] uppercase tracking-wider bg-blue-50 text-blue-600 border-blue-200">Scheduled</Badge>
                     ) : alert.status === 'Resolved' ? (
-                      <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200">Resolved</Badge>
+                      <Badge variant="outline" className="rounded-full font-bold px-2 py-0.5 text-[10px] uppercase tracking-wider bg-emerald-50 text-emerald-600 border-emerald-200">Resolved</Badge>
                     ) : (
-                      <Badge variant="outline" className="bg-slate-100 text-slate-500 border-slate-200">{alert.status}</Badge>
+                      <Badge variant="outline" className="rounded-full font-bold px-2 py-0.5 text-[10px] uppercase tracking-wider bg-slate-50 text-slate-600 border-slate-200">{alert.status}</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right pr-6">
+                  <TableCell className="text-right pr-6 py-3">
                     {alert.status === 'Pending' && (
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         onClick={() => cancelAlert(alert.alert_id)}
-                        className="text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg h-8 px-2"
+                        className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg h-8 px-2 font-semibold text-[11px]"
                         title="Cancel Alert (e.g. if animal is sold/deceased)"
                       >
-                        <XCircleIcon className="w-4 h-4 mr-1" />
+                        <XCircleIcon className="w-3.5 h-3.5 mr-1" />
                         Cancel
                       </Button>
                     )}

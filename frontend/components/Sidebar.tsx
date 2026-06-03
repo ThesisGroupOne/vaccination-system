@@ -14,8 +14,13 @@ import {
   FileTextIcon,
   LayersIcon,
   WarehouseIcon,
+  ActivityIcon,
+  ShieldCheckIcon,
+  MoreVerticalIcon,
+  UserIcon
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { canView } from '@/lib/permissions';
 
 
 interface SidebarProps {
@@ -46,10 +51,10 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     {
       label: 'Management',
       items: [
-        { href: '/dashboard/farms', label: 'Farms', icon: WarehouseIcon },
-        { href: '/dashboard/animals', label: 'Animals Registration', icon: LayersIcon },
-        { href: '/dashboard/vaccines', label: 'Vaccines', icon: SyringeIcon },
-        { href: '/dashboard/stock', label: 'Inventory (Stock)', icon: PackageIcon },
+        ...(canView('Farms', role) ? [{ href: '/dashboard/farms', label: 'Farms', icon: WarehouseIcon }] : []),
+        ...(canView('Animals', role) ? [{ href: '/dashboard/animals', label: 'Animals Registration', icon: LayersIcon }] : []),
+        ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccines', label: 'Vaccines', icon: SyringeIcon }] : []),
+        ...(canView('Stock', role) ? [{ href: '/dashboard/stock', label: 'Inventory (Stock)', icon: PackageIcon }] : []),
       ]
     },
     ...(role === 'Admin' ? [
@@ -57,73 +62,69 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         label: 'Access Control',
         items: [
           { href: '/dashboard/users', label: 'Users', icon: UsersIcon },
+          { href: '#', label: 'Roles & Permissions', icon: ShieldCheckIcon },
         ]
       }
     ] : []),
-    {
-      label: 'Analytics',
-      items: [
-        { href: '/dashboard/reports', label: 'Reports', icon: PieChartIcon },
-        { href: '/dashboard/reports', label: 'Vaccination logs', icon: FileTextIcon },
-      ]
-    },
-    {
+    ...(role === 'Admin' || role === 'Doctor' ? [{
       label: 'System',
       items: [
         { href: '#', label: 'Settings', icon: SettingsIcon },
+        { href: '#', label: 'Activity Logs', icon: ActivityIcon },
       ]
-    }
-  ];
+    }] : [])
+  ].filter(group => group.items.length > 0);
 
 
   return (
-    <div className={`fixed left-0 top-0 h-screen transition-all duration-300 ease-in-out z-50 bg-[#2FA4D7] text-white flex flex-col ${isCollapsed ? 'w-20' : 'w-64'}`}>
-      <div className="flex items-center justify-between p-4 h-20 border-b border-white/10">
+    <div className={`fixed left-0 top-0 h-screen transition-all duration-300 ease-in-out z-50 bg-gradient-to-b from-blue-600 to-blue-500 text-white flex flex-col shadow-xl ${isCollapsed ? 'w-20' : 'w-64'}`}>
+      <div className="flex items-center justify-between p-4 h-20">
         <div className={`flex items-center gap-3 transition-all duration-300 ${isCollapsed ? 'opacity-0 invisible w-0' : 'opacity-100 visible'}`}>
-          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white font-bold text-xl shadow-lg border border-white/30">
-            M
-          </div>
-          <span className="text-xl font-bold tracking-tight text-white whitespace-nowrap">Mumin Group</span>
+          <img 
+            src="/img/463865371_8646484958778270_5136213218242522965_n-removebg-preview.png" 
+            alt="Mumin Group Logo" 
+            className="w-11 h-11 object-contain rounded-xl bg-white/20 shadow-sm" 
+          />
+          <span className="text-lg font-bold tracking-tight text-white whitespace-nowrap">Mumin Group</span>
         </div>
         <button
           onClick={onToggle}
-          className={`p-2 rounded-lg hover:bg-white/10 transition-colors relative ${isCollapsed ? 'mx-auto' : ''}`}
+          className={`p-1.5 rounded-lg text-white/80 hover:bg-white/10 transition-colors relative ${isCollapsed ? 'mx-auto' : ''}`}
         >
-          {isCollapsed ? <MenuIcon className="w-6 h-6" /> : <ChevronLeftIcon className="w-6 h-6" />}
+          {isCollapsed ? <MenuIcon className="w-5 h-5" /> : <ChevronLeftIcon className="w-5 h-5" />}
         </button>
       </div>
 
-      <div className="flex-1 px-3 space-y-6 mt-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="flex-1 px-4 space-y-5 mt-2 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {menuGroups.map((group, groupIdx) => (
-          <div key={groupIdx} className="space-y-2">
+          <div key={groupIdx} className="space-y-1">
             {!isCollapsed && (
-              <p className="text-[10px] font-bold text-[#f0f0f0]/40 uppercase tracking-[2px] px-4 py-2">
+              <p className="text-[10px] font-bold text-blue-200 uppercase tracking-widest px-3 py-2">
                 {group.label}
               </p>
             )}
             {isCollapsed && (
-              <div className="h-[1px] bg-[#f0f0f0]/10 mx-4 my-4" />
+              <div className="h-[1px] bg-white/10 mx-4 my-4" />
             )}
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {group.items.map((item) => {
                 const isActive = pathname === item.href;
                 const Icon = item.icon;
 
                 return (
-                  <Link
-                    key={`${group.label}-${item.label}`}
-                    href={item.href}
-                    className={`flex items-center gap-4 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative border border-transparent ${isActive
-                      ? 'bg-white text-[#2FA4D7] shadow-lg translate-x-1'
-                      : 'text-white/80 hover:bg-white/10 hover:text-white'
-                      }`}
-                  >
-                    <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-[#2FA4D7]' : 'text-white/70 group-hover:text-white'}`} />
+                    <Link
+                      key={`${group.label}-${item.label}`}
+                      href={item.href}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-[12px] text-sm font-semibold transition-all duration-200 group relative border border-transparent ${isActive
+                        ? 'bg-white text-brand-secondary shadow-sm'
+                        : 'text-white hover:bg-white/10'
+                        }`}
+                    >
+                      <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${isActive ? 'text-brand-secondary' : 'text-blue-100 group-hover:text-white'}`} />
                     {!isCollapsed && <span className="whitespace-nowrap transition-all duration-300 opacity-100">{item.label}</span>}
 
-
                     {isCollapsed && (
-                      <span className="absolute left-full rounded-md px-2 py-1 ml-6 bg-[#11101d] text-white text-xs invisible opacity-0 -translate-x-3 transition-all group-hover:visible group-hover:opacity-100 group-hover:translate-x-0 z-[100] whitespace-nowrap shadow-xl border border-[#403e57]">
+                      <span className="absolute left-full rounded-md px-2 py-1 ml-6 bg-slate-900 text-white text-xs invisible opacity-0 -translate-x-3 transition-all group-hover:visible group-hover:opacity-100 group-hover:translate-x-0 z-[100] whitespace-nowrap shadow-xl">
                         {item.label}
                       </span>
                     )}
@@ -135,16 +136,19 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         ))}
       </div>
 
-      <div className="p-4 mt-auto border-t border-white/10">
-        <div className={`bg-white/10 rounded-xl p-3 flex items-center gap-3 transition-all duration-300 ${isCollapsed ? 'justify-center p-2' : ''}`}>
-          <div className="w-10 h-10 rounded-lg bg-white text-[#2FA4D7] flex items-center justify-center font-bold text-base flex-shrink-0 shadow-sm">
-            {user.name?.charAt(0)}
+      <div className="p-4 mt-auto">
+        <div className={`bg-black/10 rounded-[14px] p-3 flex items-center gap-3 transition-all duration-300 border border-white/5 hover:bg-black/20 cursor-pointer ${isCollapsed ? 'justify-center p-2' : ''}`}>
+          <div className="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center flex-shrink-0 shadow-inner">
+            <UserIcon className="w-5 h-5 text-slate-300" />
           </div>
           {!isCollapsed && (
-            <div className="flex flex-col overflow-hidden">
-              <span className="text-sm font-semibold text-white truncate">{user.name}</span>
-              <span className="text-xs text-white/60 truncate">{user.role}</span>
+            <div className="flex flex-col overflow-hidden flex-1">
+              <span className="text-sm font-bold text-white truncate">{user.name}</span>
+              <span className="text-[11px] text-blue-200 truncate font-medium">{user.role}</span>
             </div>
+          )}
+          {!isCollapsed && (
+             <MoreVerticalIcon className="w-4 h-4 text-blue-200" />
           )}
         </div>
       </div>

@@ -27,4 +27,33 @@ const createVaccine = async (req, res) => {
     }
 };
 
-module.exports = { getVaccines, createVaccine };
+const updateVaccine = async (req, res) => {
+    const { id } = req.params;
+    const { vaccine_name, description, validity_period_days, recommended_interval_days } = req.body;
+    try {
+        const vaccine = await prisma.vaccine.update({
+            where: { vaccine_id: parseInt(id) },
+            data: {
+                vaccine_name,
+                description,
+                validity_period_days: parseInt(validity_period_days),
+                recommended_interval_days: parseInt(recommended_interval_days),
+            },
+        });
+        res.json(vaccine);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+const deleteVaccine = async (req, res) => {
+    const { id } = req.params;
+    try {
+        await prisma.vaccine.delete({ where: { vaccine_id: parseInt(id) } });
+        res.status(204).send();
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+module.exports = { getVaccines, createVaccine, updateVaccine, deleteVaccine };

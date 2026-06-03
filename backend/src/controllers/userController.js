@@ -33,4 +33,33 @@ const createUser = async (req, res) => {
     }
 };
 
-module.exports = { getUsers, createUser };
+const updateUser = async (req, res) => {
+    const { id } = req.params;
+    const { full_name, email, password, role, phone } = req.body;
+    try {
+        const data = { full_name, email, role, phone };
+        if (password) {
+            data.password = await bcrypt.hash(password, 10);
+        }
+        const user = await prisma.user.update({
+            where: { user_id: parseInt(id) },
+            data,
+            select: { user_id: true, full_name: true, email: true, role: true, phone: true }
+        });
+        res.json(user);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+const deleteUser = async (req, res) => {
+    const { id } = req.params;
+    try {
+        await prisma.user.delete({ where: { user_id: parseInt(id) } });
+        res.status(204).send();
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+module.exports = { getUsers, createUser, updateUser, deleteUser };

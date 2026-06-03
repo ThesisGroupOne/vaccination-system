@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { LogIn, Mail, Lock } from "lucide-react"
+import { Mail, Lock, ArrowRight, ShieldCheck, Activity, Users } from "lucide-react"
 
 export default function LoginPage() {
     const router = useRouter()
@@ -17,9 +15,10 @@ export default function LoginPage() {
     })
     const [error, setError] = useState("")
     const [loading, setLoading] = useState(false)
+    const [mounted, setMounted] = useState(false)
 
-    // Redirect if already logged in
     useEffect(() => {
+        setMounted(true)
         const token = localStorage.getItem("token")
         if (token) {
             router.push("/dashboard")
@@ -50,13 +49,11 @@ export default function LoginPage() {
                 throw new Error(data.error || "Login failed")
             }
 
-            // Save to localStorage
             localStorage.setItem("token", data.token)
             localStorage.setItem("role", data.role)
             localStorage.setItem("name", data.name)
             localStorage.setItem("email", formData.email)
 
-            // Redirect to dashboard
             router.push("/dashboard")
         } catch (err: unknown) {
             if (err instanceof Error) {
@@ -69,93 +66,179 @@ export default function LoginPage() {
         }
     }
 
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4 relative overflow-hidden">
-            {/* Background Decorative elements */}
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-[#2FA4D7]/5 blur-3xl z-0" />
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-[#2FA4D7]/10 blur-3xl z-0" />
+    if (!mounted) return null;
 
-            <Card className="w-full max-w-md shadow-xl border-[#2FA4D7]/20 z-10 backdrop-blur-sm bg-background/95">
-                <CardHeader className="space-y-1 text-center">
-                    <div className="flex justify-center mb-2">
-                        <div className="p-3 bg-[#2FA4D7]/10 rounded-full">
-                            <LogIn className="h-6 w-6 text-[#2FA4D7]" />
+    return (
+        <div className="min-h-screen flex bg-slate-50 font-sans selection:bg-blue-500/30">
+            {/* Left Side - Form Area */}
+            <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col justify-center relative overflow-hidden">
+                {/* Decorative background blurs */}
+                <div className="absolute top-[-10%] left-[-20%] w-[50%] h-[50%] rounded-full bg-blue-400/20 blur-[100px] pointer-events-none" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-400/20 blur-[100px] pointer-events-none" />
+
+                <div className="w-full max-w-md mx-auto px-6 sm:px-12 relative z-10">
+                    <div className="mb-10 animate-fade-in-up">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center mb-8 shadow-lg shadow-blue-500/30 transform transition-transform hover:scale-105">
+                            <ShieldCheck className="h-7 w-7 text-white" />
                         </div>
+                        <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-3">
+                            Welcome Back
+                        </h1>
+                        <p className="text-slate-500 text-base">
+                            Securely manage your livestock operations.
+                        </p>
                     </div>
-                    <CardTitle className="text-2xl font-bold tracking-tight">Welcome back</CardTitle>
-                    <CardDescription>
-                        Enter your credentials to access your account
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
+
                     {registered && (
-                        <div className="mb-4 p-3 bg-green-500/10 text-green-600 text-sm rounded-md border border-green-500/20 text-center font-medium">
-                            Registration successful! Please log in.
+                        <div className="mb-8 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center space-x-3 animate-fade-in">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <p className="text-emerald-700 text-sm font-medium">Registration successful! Please log in.</p>
                         </div>
                     )}
 
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-6">
                         {error && (
-                            <div className="p-3 bg-destructive/10 text-destructive text-sm rounded-md border border-destructive/20 text-center font-medium">
-                                {error}
+                            <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start space-x-3 animate-fade-in">
+                                <div className="mt-1 w-2 h-2 rounded-full bg-rose-500 flex-shrink-0" />
+                                <p className="text-rose-700 text-sm font-medium leading-relaxed">{error}</p>
                             </div>
                         )}
 
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none">
-                                Email
-                            </label>
-                            <div className="relative group">
-                                <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground group-focus-within:text-[#2FA4D7] transition-colors" />
-                                <input
-                                    type="email"
-                                    name="email"
-                                    value={formData.email}
-                                    onChange={handleChange}
-                                    required
-                                    placeholder="name@example.com"
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2FA4D7]/50 focus-visible:border-[#2FA4D7] disabled:cursor-not-allowed disabled:opacity-50 pl-10 transition-all duration-200"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium leading-none">
-                                    Password
+                        <div className="space-y-5">
+                            {/* Email Field */}
+                            <div className="space-y-2 relative group">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">
+                                    Email Address
                                 </label>
-                                <a href="#" className="text-xs text-[#2FA4D7] hover:underline font-medium">
-                                    Forgot password?
-                                </a>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                                        <Mail className="h-5 w-5" />
+                                    </div>
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        required
+                                        placeholder="user@example.com"
+                                        className="block w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all duration-300 outline-none shadow-sm shadow-slate-200/50"
+                                    />
+                                </div>
                             </div>
-                            <div className="relative group">
-                                <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground group-focus-within:text-[#2FA4D7] transition-colors" />
-                                <input
-                                    type="password"
-                                    name="password"
-                                    value={formData.password}
-                                    onChange={handleChange}
-                                    required
-                                    placeholder="••••••••"
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2FA4D7]/50 focus-visible:border-[#2FA4D7] disabled:cursor-not-allowed disabled:opacity-50 pl-10 transition-all duration-200"
-                                />
+
+                            {/* Password Field */}
+                            <div className="space-y-2 relative group">
+                                <div className="flex items-center justify-between ml-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                        Password
+                                    </label>
+                                    <button type="button" onClick={() => router.push("/forgot-password")} className="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors">
+                                        Forgot password?
+                                    </button>
+                                </div>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                                        <Lock className="h-5 w-5" />
+                                    </div>
+                                    <input
+                                        type="password"
+                                        name="password"
+                                        value={formData.password}
+                                        onChange={handleChange}
+                                        required
+                                        placeholder="••••••••"
+                                        className="block w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all duration-300 outline-none shadow-sm shadow-slate-200/50"
+                                    />
+                                </div>
                             </div>
                         </div>
 
-                        <Button type="submit" className="w-full mt-6 shadow-md hover:shadow-lg transition-all bg-[#2FA4D7] text-white hover:bg-[#2FA4D7]/90" size="lg" disabled={loading}>
-                            {loading ? "Signing in..." : "Sign In"}
-                        </Button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full relative flex items-center justify-center py-4 px-8 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-base shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] hover:shadow-[0_12px_25px_-6px_rgba(37,99,235,0.6)] hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-70 disabled:hover:translate-y-0 disabled:hover:shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] overflow-hidden group mt-8"
+                        >
+                            <span className="relative z-10 flex items-center">
+                                {loading ? "Authenticating..." : "Sign In"}
+                                {!loading && <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />}
+                            </span>
+                            <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                        </button>
                     </form>
-                </CardContent>
-                <CardFooter className="flex justify-center border-t p-4 bg-muted/20">
-                    <p className="text-sm text-muted-foreground">
-                        Don&apos;t have an account?{" "}
-                        <Button variant="link" className="p-0 h-auto font-semibold text-[#2FA4D7]" onClick={() => router.push("/register")}>
-                            Sign up
-                        </Button>
-                    </p>
-                </CardFooter>
-            </Card>
+
+                    <div className="mt-10 text-center">
+                        <p className="text-sm font-medium text-slate-500">
+                            Don&apos;t have an account?{" "}
+                            <button onClick={() => router.push("/register")} className="font-bold text-blue-600 hover:text-blue-700 transition-colors">
+                                Request access
+                            </button>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Side - Dynamic Brand Display */}
+            <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative p-6">
+                <div className="absolute inset-0 m-6 rounded-[2.5rem] overflow-hidden bg-blue-900 shadow-2xl">
+                    {/* Background Image */}
+                    <div 
+                        className="absolute inset-0 bg-cover bg-center transform hover:scale-105 transition-transform duration-[10s] ease-in-out mix-blend-overlay opacity-60 grayscale-[10%]"
+                        style={{ backgroundImage: 'url("/bg-farm.png")' }}
+                    />
+                    
+                    {/* Deep Blue Gradients Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-900/90 via-blue-800/80 to-indigo-900/90 z-10" />
+                    
+                    {/* Animated Geometric Accents */}
+                    <div className="absolute top-0 left-0 w-full h-full z-20 opacity-30">
+                        <div className="absolute top-[10%] left-[10%] w-64 h-64 border border-white/20 rounded-full animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]" />
+                        <div className="absolute top-[20%] right-[15%] w-96 h-96 border border-white/10 rounded-full animate-pulse" />
+                    </div>
+
+                    {/* Content Overlay */}
+                    <div className="absolute inset-0 z-30 flex flex-col justify-between p-16">
+                        <div className="flex items-center space-x-3 text-white/90">
+                            <Activity className="h-8 w-8" />
+                            <span className="text-xl font-bold tracking-wider uppercase">Mumin Group</span>
+                        </div>
+
+                        <div className="max-w-xl">
+                            <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 mb-6">
+                                <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                                <span className="text-sm font-semibold text-white">System Operations Active</span>
+                            </div>
+                            <h2 className="text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
+                                Modern <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">Livestock</span> Management
+                            </h2>
+                            <p className="text-lg text-blue-100/80 leading-relaxed font-medium">
+                                Empowering veterinary teams and farm managers with real-time data, comprehensive health tracking, and seamless inventory synchronization.
+                            </p>
+
+                            {/* Stats/Features Row */}
+                            <div className="grid grid-cols-2 gap-6 mt-12">
+                                <div className="flex items-center space-x-4 bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
+                                    <div className="p-3 bg-blue-500/20 rounded-xl">
+                                        <Activity className="h-6 w-6 text-blue-300" />
+                                    </div>
+                                    <div>
+                                        <p className="text-2xl font-bold text-white">99.9%</p>
+                                        <p className="text-xs text-blue-200 font-medium">System Uptime</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center space-x-4 bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
+                                    <div className="p-3 bg-indigo-500/20 rounded-xl">
+                                        <Users className="h-6 w-6 text-indigo-300" />
+                                    </div>
+                                    <div>
+                                        <p className="text-2xl font-bold text-white">24/7</p>
+                                        <p className="text-xs text-blue-200 font-medium">Data Syncing</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     )
 }

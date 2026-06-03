@@ -33,4 +33,36 @@ const createStock = async (req, res) => {
   }
 };
 
-module.exports = { getStocks, createStock };
+const updateStock = async (req, res) => {
+  const { id } = req.params;
+  const { vaccine_id, supplier_name, batch_number, quantity_purchased, purchase_price, purchase_date, expiry_date } = req.body;
+  try {
+    const stock = await prisma.vaccineStock.update({
+      where: { stock_id: parseInt(id) },
+      data: {
+        vaccine_id,
+        supplier_name,
+        batch_number,
+        quantity_purchased,
+        purchase_price,
+        purchase_date: new Date(purchase_date),
+        expiry_date: new Date(expiry_date),
+      },
+    });
+    res.json(stock);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+const deleteStock = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await prisma.vaccineStock.delete({ where: { stock_id: parseInt(id) } });
+    res.status(204).send();
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+module.exports = { getStocks, createStock, updateStock, deleteStock };

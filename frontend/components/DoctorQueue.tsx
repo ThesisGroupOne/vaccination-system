@@ -126,15 +126,15 @@ export default function DoctorQueue() {
     };
 
     return (
-        <Card className="rounded-2xl border-none shadow-lg bg-background overflow-hidden">
-            <CardHeader className="bg-slate-50 border-b border-slate-100 pb-4">
+        <Card className="rounded-[20px] border-none shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] bg-white overflow-hidden">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-gray-50 p-6 bg-white">
                 <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30">
-                        <SyringeIcon className="h-5 w-5" />
+                    <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                        <SyringeIcon className="w-6 h-6" />
                     </div>
-                    <div>
-                        <CardTitle className="text-lg font-bold text-slate-800">Vaccination Queue</CardTitle>
-                        <CardDescription className="text-xs">Scheduled vaccinations waiting for execution.</CardDescription>
+                    <div className="flex flex-col space-y-0.5">
+                        <CardTitle className="text-base font-extrabold text-slate-800">Vaccination Queue</CardTitle>
+                        <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">Scheduled vaccinations waiting for execution.</CardDescription>
                     </div>
                 </div>
             </CardHeader>
@@ -144,54 +144,54 @@ export default function DoctorQueue() {
                         <Loader2Icon className="h-8 w-8 animate-spin mx-auto text-indigo-500 opacity-50" />
                     </div>
                 ) : schedules.length > 0 ? (
-                    <div className="divide-y divide-slate-100">
+                    <div className="flex flex-col">
                         {schedules.map((schedule) => {
                             const isSoldOrDeceased = schedule.animal?.status === 'Sold' || schedule.animal?.status === 'Deceased';
                             const isPregnant = schedule.animal?.is_pregnant;
                             const canVaccinate = !isSoldOrDeceased && !isPregnant;
 
                             return (
-                                <div key={schedule.schedule_id} className={`p-5 flex items-center justify-between gap-4 ${isSoldOrDeceased ? 'bg-slate-50 opacity-60' : 'hover:bg-slate-50'} transition-colors`}>
-                                    <div className="space-y-2">
+                                <div key={schedule.schedule_id} className={`p-6 flex items-center justify-between gap-4 border-b border-gray-50 ${isSoldOrDeceased ? 'bg-slate-50/50 opacity-60' : 'hover:bg-slate-50'} transition-colors group`}>
+                                    <div className="space-y-3">
                                         <div className="flex items-center gap-3">
-                                            <h4 className={`font-bold ${isSoldOrDeceased ? 'line-through text-slate-500' : 'text-slate-800'}`}>
+                                            <h4 className={`font-extrabold text-sm ${isSoldOrDeceased ? 'line-through text-slate-500' : 'text-slate-800'}`}>
                                                 Animal #{schedule.animal?.animal_id} ({schedule.animal?.nickname || 'Unnamed'})
                                             </h4>
                                             {schedule.status === 'Completed' ? (
-                                                <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200 text-[10px]">Completed</Badge>
+                                                <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200 text-[10px] uppercase tracking-wider font-bold rounded-full px-2 py-0.5">Completed</Badge>
                                             ) : (
-                                                <Badge variant="outline" className="bg-blue-50 text-blue-600 border-blue-200 text-[10px]">Pending</Badge>
+                                                <Badge variant="outline" className="bg-blue-50 text-blue-600 border-blue-200 text-[10px] uppercase tracking-wider font-bold rounded-full px-2 py-0.5">Pending</Badge>
                                             )}
                                             {isSoldOrDeceased && (
-                                                <Badge variant="destructive" className="bg-red-500 text-white text-[10px]">{schedule.animal?.status}</Badge>
+                                                <Badge variant="destructive" className="bg-rose-500 text-white text-[10px] uppercase tracking-wider font-bold rounded-full px-2 py-0.5">{schedule.animal?.status}</Badge>
                                             )}
                                             {isPregnant && (
-                                                <Badge variant="outline" className="border-amber-500 text-amber-600 bg-amber-50 text-[10px]">Pregnant (Do not vaccinate)</Badge>
+                                                <Badge variant="outline" className="border-amber-200 text-amber-600 bg-amber-50 text-[10px] uppercase tracking-wider font-bold rounded-full px-2 py-0.5">Pregnant (Do not vaccinate)</Badge>
                                             )}
                                         </div>
-                                        <p className="text-sm font-medium text-slate-600">
-                                            Vaccine: <span className="text-indigo-600">{schedule.vaccine?.vaccine_name}</span>
+                                        <p className="text-xs font-medium text-slate-600 bg-gray-50/50 p-2 rounded-lg border border-gray-100 inline-block">
+                                            Vaccine: <span className="text-indigo-600 font-bold">{schedule.vaccine?.vaccine_name}</span>
                                         </p>
-                                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                                            <CalendarIcon className="h-3 w-3" />
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                            <CalendarIcon className="h-3.5 w-3.5 text-indigo-500" />
                                             {new Date(schedule.scheduled_date).toLocaleString()}
                                         </div>
                                     </div>
                                     <div>
                                         {schedule.status === 'Completed' ? (
-                                            <Button size="sm" variant="outline" disabled className="rounded-lg bg-emerald-50 border-emerald-200 text-emerald-700">
+                                            <Button size="sm" variant="outline" disabled className="rounded-lg bg-emerald-50 border-emerald-200 text-emerald-700 font-semibold h-9 px-4 text-xs">
                                                 Completed
                                             </Button>
                                         ) : canVaccinate ? (
                                             <Button
                                                 size="sm"
-                                                className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20"
+                                                className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-semibold h-9 px-4 text-xs"
                                                 onClick={() => openVaccinateModal(schedule)}
                                             >
                                                 Vaccinate Now
                                             </Button>
                                         ) : (
-                                            <Button size="sm" variant="outline" disabled className="rounded-lg">
+                                            <Button size="sm" variant="outline" disabled className="rounded-lg font-semibold h-9 px-4 text-xs">
                                                 Unavailable
                                             </Button>
                                         )}
@@ -209,23 +209,23 @@ export default function DoctorQueue() {
             </CardContent>
 
             <Dialog open={isVaccinateModalOpen} onOpenChange={setIsVaccinateModalOpen}>
-                <DialogContent className="sm:max-w-[425px] rounded-2xl border-none shadow-2xl">
+                <DialogContent className="sm:max-w-[450px] rounded-[24px] border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] bg-white p-6">
                     <form onSubmit={handleVaccinate}>
-                        <DialogHeader>
-                            <DialogTitle>Execute Vaccination</DialogTitle>
-                            <DialogDescription>
+                        <DialogHeader className="mb-4">
+                            <DialogTitle className="text-xl font-extrabold text-slate-800">Execute Vaccination</DialogTitle>
+                            <DialogDescription className="text-xs text-slate-500 font-medium">
                                 Administering {selectedSchedule?.vaccine?.vaccine_name} to Animal #{selectedSchedule?.animal?.animal_id}
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="grid gap-4 py-4">
+                        <div className="grid gap-4 py-2">
                             <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="stock_id" className="text-right">Stock Batch</Label>
+                                <Label htmlFor="stock_id" className="text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Stock Batch</Label>
                                 <div className="col-span-3">
                                     {availableStocks.length > 0 ? (
                                         <select 
                                             id="stock_id"
                                             required 
-                                            className="w-full rounded-lg bg-muted/20 border border-slate-200 h-10 px-3" 
+                                            className="w-full rounded-xl bg-gray-50/50 border border-gray-200 h-11 px-3 text-xs font-medium focus-visible:ring-indigo-500" 
                                             value={stockId} 
                                             onChange={(e) => setStockId(e.target.value)}
                                         >
@@ -236,19 +236,20 @@ export default function DoctorQueue() {
                                             ))}
                                         </select>
                                     ) : (
-                                        <div className="text-sm text-red-500 font-medium bg-red-50 p-2 rounded-lg border border-red-100">
+                                        <div className="text-xs text-rose-600 font-bold bg-rose-50 p-3 rounded-xl border border-rose-100">
                                             No stock available for this vaccine. Please add stock in Inventory.
                                         </div>
                                     )}
                                 </div>
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="dosage" className="text-right">Dosage (ml)</Label>
-                                <Input id="dosage" type="number" step="0.1" required className="col-span-3 rounded-lg bg-muted/20" value={dosage} onChange={(e) => setDosage(e.target.value)} placeholder="e.g. 2.5" />
+                                <Label htmlFor="dosage" className="text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Dosage (ml)</Label>
+                                <Input id="dosage" type="number" step="0.1" required className="col-span-3 rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-indigo-500" value={dosage} onChange={(e) => setDosage(e.target.value)} placeholder="e.g. 2.5" />
                             </div>
                         </div>
-                        <DialogFooter>
-                            <Button type="submit" disabled={isSaving || availableStocks.length === 0} className="rounded-xl shadow-md bg-indigo-600 hover:bg-indigo-700 text-white">
+                        <DialogFooter className="mt-6 gap-3">
+                            <Button type="button" variant="ghost" onClick={() => setIsVaccinateModalOpen(false)} className="rounded-xl text-xs font-semibold">Cancel</Button>
+                            <Button type="submit" disabled={isSaving || availableStocks.length === 0} className="rounded-xl shadow-md bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm h-11 px-6">
                                 {isSaving ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : null}
                                 Confirm & Save
                             </Button>

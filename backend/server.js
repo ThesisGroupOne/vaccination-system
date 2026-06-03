@@ -23,6 +23,7 @@ const alertRoutes = require('./src/routes/alertRoutes');
 const farmRoutes = require('./src/routes/farmRoutes');
 const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const scheduleRoutes = require('./src/routes/scheduleRoutes');
+const reminderRoutes = require('./src/routes/reminderRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/animals', animalRoutes);
@@ -35,6 +36,7 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/farms', farmRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/schedules', scheduleRoutes);
+app.use('/api/reminders', reminderRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
