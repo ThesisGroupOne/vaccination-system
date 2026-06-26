@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { HexagonIcon, SyringeIcon, AlertCircleIcon, TrendingUpIcon, UsersIcon, MoreVerticalIcon, ClockIcon, PlusIcon, PackageIcon } from "lucide-react"
@@ -12,12 +13,14 @@ import DoctorAlerts from "@/components/DoctorAlerts"
 import DoctorQueue from "@/components/DoctorQueue"
 import FarmTable from "@/components/FarmTable"
 import WorkerAlertsTable from "@/components/WorkerAlertsTable"
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, BarChart, Bar } from 'recharts'
 import Link from "next/link"
 
 export default function DashboardPage() {
   const [role, setRole] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState<number>(-1)
+  const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const [stats, setStats] = useState<any>({
     totalAnimals: 0,
     totalVaccines: 0,
@@ -143,6 +146,8 @@ export default function DashboardPage() {
         />
       </div>
 
+
+
       <div className="grid gap-6 lg:grid-cols-2 mt-4">
         {/* Left Column */}
         <div className="space-y-6">
@@ -244,28 +249,53 @@ export default function DashboardPage() {
                  </div>
                  <CardTitle className="text-base font-extrabold text-slate-800">Animals Overview</CardTitle>
                </div>
-               <select className="text-xs border border-gray-200 rounded-lg text-slate-600 font-medium px-3 py-1.5 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500">
-                 <option>This Month</option>
+               <select 
+                 className="text-xs border border-gray-200 rounded-lg text-slate-600 font-medium px-3 py-1.5 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+                 value={selectedMonth}
+                 onChange={(e) => setSelectedMonth(Number(e.target.value))}
+               >
+                 <option value={-1}>All Months</option>
+                 {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((month, index) => {
+                   const currentMonthIndex = new Date().getMonth();
+                   return (
+                     <option key={index} value={index} disabled={index > currentMonthIndex}>
+                       {index === currentMonthIndex ? "This Month" : month}
+                     </option>
+                   )
+                 })}
                </select>
              </CardHeader>
              <CardContent className="p-6">
                 <div className="h-[200px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={stats.chartData?.length > 0 ? stats.chartData : areaChartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorAnimals" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 500}} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 500}} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 15px -4px rgba(0,0,0,0.1)' }}
-                        itemStyle={{ color: '#1e293b', fontWeight: 'bold', fontSize: '12px' }}
-                      />
-                      <Area type="monotone" dataKey="animals" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorAnimals)" activeDot={{ r: 5, strokeWidth: 0, fill: '#3b82f6' }} />
-                    </AreaChart>
+                    {selectedMonth === -1 ? (
+                      <AreaChart data={stats.chartData?.length > 0 ? stats.chartData : areaChartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorAnimals" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 500}} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 500}} />
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 15px -4px rgba(0,0,0,0.1)' }}
+                          itemStyle={{ color: '#1e293b', fontWeight: 'bold', fontSize: '12px' }}
+                        />
+                        <Area type="monotone" dataKey="animals" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorAnimals)" activeDot={{ r: 5, strokeWidth: 0, fill: '#3b82f6' }} />
+                      </AreaChart>
+                    ) : (
+                      <BarChart data={(stats.chartData?.length > 0 ? stats.chartData : areaChartData).filter((d: any) => monthNamesShort.indexOf(d.month) === selectedMonth)} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} barSize={40}>
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 500}} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 500}} />
+                        <Tooltip 
+                          cursor={{fill: 'transparent'}}
+                          contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 15px -4px rgba(0,0,0,0.1)' }}
+                          itemStyle={{ color: '#1e293b', fontWeight: 'bold', fontSize: '12px' }}
+                        />
+                        <Bar dataKey="animals" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    )}
                   </ResponsiveContainer>
                 </div>
              </CardContent>

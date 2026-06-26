@@ -16,8 +16,10 @@ model User {
   role         String
   created_at   DateTime     @default(now())
 
-  vaccinations Vaccination[]
-  alerts       Alert[]
+  vaccinations        Vaccination[]
+  alerts              Alert[]
+  campaignsAsDoctor   RoutineVaccinationCampaign[] @relation("CampaignDoctor")
+  routineRecordsGiven RoutineVaccinationRecord[]   @relation("RoutineVaccinationAdmin")
 }
 
 model Farm {
@@ -38,20 +40,21 @@ enum AnimalStatus {
 }
 
 model Animal {
-  animal_id   Int      @id @default(autoincrement())
-  nickname    String?
-  animal_type      String
-  biological_type  String       @default("Unknown")
-  is_pregnant      Boolean      @default(false)
-  age              Int
-  status           AnimalStatus @default(Active)
-  farm_id     Int
-  created_at  DateTime @default(now())
+  animal_id       Int          @id @default(autoincrement())
+  nickname        String?
+  animal_type     String
+  biological_type String       @default("Unknown")
+  is_pregnant     Boolean      @default(false)
+  age             Int
+  status          AnimalStatus @default(Active)
+  farm_id         Int
+  created_at      DateTime     @default(now())
 
-  farm         Farm          @relation(fields: [farm_id], references: [farm_id])
-  vaccinations Vaccination[]
-  schedules    VaccinationSchedule[]
-  alerts       Alert[]
+  farm           Farm                       @relation(fields: [farm_id], references: [farm_id])
+  vaccinations   Vaccination[]
+  schedules      VaccinationSchedule[]
+  alerts         Alert[]
+  routineRecords RoutineVaccinationRecord[]
 }
 
 model Vaccine {
@@ -62,9 +65,12 @@ model Vaccine {
   recommended_interval_days Int
   created_at                DateTime @default(now())
 
-  stocks       VaccineStock[]
-  vaccinations Vaccination[]
-  schedules    VaccinationSchedule[]
+  stocks           VaccineStock[]
+  vaccinations     Vaccination[]
+  schedules        VaccinationSchedule[]
+  routineTemplates RoutineVaccinationTemplate[]
+  routineCampaigns RoutineVaccinationCampaign[]
+  routineRecords   RoutineVaccinationRecord[]
 }
 
 model VaccineStock {
@@ -79,26 +85,26 @@ model VaccineStock {
   expiry_date        DateTime
   created_at         DateTime @default(now())
 
-  vaccine   Vaccine   @relation(fields: [vaccine_id], references: [vaccine_id])
-
-  vaccinations Vaccination[]
+  vaccine        Vaccine                    @relation(fields: [vaccine_id], references: [vaccine_id])
+  vaccinations   Vaccination[]
+  routineRecords RoutineVaccinationRecord[]
 }
 
 model Vaccination {
-  vaccination_id   Int      @id @default(autoincrement())
-  animal_id        Int
-  vaccine_id       Int
-  administered_by  Int
-  stock_id         Int
-  dosage_ml        Float        @default(0)
+  vaccination_id    Int      @id @default(autoincrement())
+  animal_id         Int
+  vaccine_id        Int
+  administered_by   Int
+  stock_id          Int
+  dosage_ml         Float    @default(0)
   date_administered DateTime
-  next_due_date    DateTime
-  created_at       DateTime @default(now())
+  next_due_date     DateTime
+  created_at        DateTime @default(now())
 
-  animal Animal      @relation(fields: [animal_id], references: [animal_id])
-  vaccine Vaccine    @relation(fields: [vaccine_id], references: [vaccine_id])
-  user   User        @relation(fields: [administered_by], references: [user_id])
-  stock  VaccineStock @relation(fields: [stock_id], references: [stock_id])
+  animal  Animal       @relation(fields: [animal_id], references: [animal_id])
+  vaccine Vaccine      @relation(fields: [vaccine_id], references: [vaccine_id])
+  user    User         @relation(fields: [administered_by], references: [user_id])
+  stock   VaccineStock @relation(fields: [stock_id], references: [stock_id])
 }
 
 model VaccinationSchedule {
@@ -128,4 +134,91 @@ model Alert {
   animal Animal @relation(fields: [animal_id], references: [animal_id])
   farm   Farm   @relation(fields: [farm_id], references: [farm_id])
   user   User   @relation(fields: [user_id], references: [user_id])
+}
+
+model VaccineRequest {
+  id          Int      @id @default(autoincrement())
+  doctorName  String
+  vaccineType String
+  quantity    Int
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// ROUTINE VACCINATION MODELS
+// ─────────────────────────────────────────────────
+
+/// Admin wuxuu abuura hal mar – qeexaya noocu, tallaalka, iyo jadwalka
+model RoutineVaccinationTemplate {
+  id                   Int      @id @default(autoincrement())
+  campaign_name        String
+  animal_type          String                       // "Goat" | "Cattle" | "Camel"
+  vaccine_id           Int
+  frequency_months     Int                          // 6 ama 12 bilood
+  reminder_days_before Int      @default(30)
+  start_date           DateTime
+  status               String   @default("Active") // "Active" | "Inactive"
+  created_at           DateTime @default(now())
+
+  vaccine   Vaccine                      @relation(fields: [vaccine_id], references: [vaccine_id])
+  campaigns RoutineVaccinationCampaign[]
+}
+
+/// System-ku otomaatig wuxuu abuura marka reminder-ka la gaaro
+model RoutineVaccinationCampaign {
+  id             Int       @id @default(autoincrement())
+  template_id    Int
+  campaign_name  String
+  animal_type    String
+  vaccine_id     Int
+  due_date       DateTime
+  scheduled_date DateTime?
+  completed_date DateTime?                      // taariikhda dhabta ah ee la talaalay (wareegga xiga waa laga xisaabiyaa)
+  animals_due    Int       @default(0)
+  status         String    @default("Upcoming") // Upcoming | Scheduled | InProgress | Completed
+  doctor_id      Int?
+  created_at     DateTime  @default(now())
+
+  template RoutineVaccinationTemplate @relation(fields: [template_id], references: [id])
+  vaccine  Vaccine                    @relation(fields: [vaccine_id], references: [vaccine_id])
+  doctor   User?                      @relation("CampaignDoctor", fields: [doctor_id], references: [user_id])
+  records  RoutineVaccinationRecord[]
+}
+
+/// Waxaa la abuuraa per-animal marka tallaalka la dhameeyo
+model RoutineVaccinationRecord {
+  id                Int      @id @default(autoincrement())
+  campaign_id       Int
+  animal_id         Int
+  vaccine_id        Int
+  administered_by   Int
+  stock_id          Int
+  dosage_ml         Float?
+  date_administered DateTime
+  next_due_date     DateTime
+  created_at        DateTime @default(now())
+
+  campaign          RoutineVaccinationCampaign @relation(fields: [campaign_id], references: [id])
+  animal            Animal                     @relation(fields: [animal_id], references: [animal_id])
+  vaccine           Vaccine                    @relation(fields: [vaccine_id], references: [vaccine_id])
+  administered_user User                       @relation("RoutineVaccinationAdmin", fields: [administered_by], references: [user_id])
+  stock             VaccineStock               @relation(fields: [stock_id], references: [stock_id])
+}
+
+// ─────────────────────────────────────────────────
+// ACTIVITY LOG MODEL
+// ─────────────────────────────────────────────────
+
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  action      String   // CREATE | UPDATE | DELETE | LOGIN | LOGOUT | VACCINATE | STATUS_CHANGE
+  entity      String   // Animal | Vaccine | Stock | User | Farm | Vaccination | Schedule | Alert
+  entity_id   Int?
+  description String
+  user_id     Int?
+  user_name   String?
+  user_role   String?
+  ip_address  String?
+  created_at  DateTime @default(now())
 }

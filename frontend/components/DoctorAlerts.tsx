@@ -9,14 +9,24 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RequestVaccineDialog } from '@/components/ui/request-vaccine-dialog';
 
 interface Alert {
     alert_id: number;
-    animal?: { animal_id: number; nickname?: string };
+    animal?: { animal_id: number; nickname?: string; animal_type?: string };
     farm?: { farm_name: string };
     symptoms: string;
     created_at: string;
     status: string;
+}
+
+interface VaccineOption {
+    vaccine_id: number;
+    vaccine_name: string;
+    remaining_usable: number;
+    remaining_total: number;
+    status: 'Available' | 'Low Stock' | 'Expired' | 'Out of Stock';
 }
 
 export default function DoctorAlerts() {
@@ -27,6 +37,7 @@ export default function DoctorAlerts() {
     const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
     const [scheduleData, setScheduleData] = useState({ vaccine_id: '', scheduled_date: '', schedule_type: 'Emergency' });
     const [isScheduling, setIsScheduling] = useState(false);
+    const [vaccines, setVaccines] = useState<VaccineOption[]>([]);
 
     const fetchAlerts = async () => {
         setIsLoading(true);
@@ -46,29 +57,57 @@ export default function DoctorAlerts() {
         }
     };
 
-    useEffect(() => {
-        fetchAlerts();
-    }, []);
-
-    const handleUpdateStatus = async (alertId: number, status: string) => {
+    const fetchVaccines = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`http://localhost:9999/api/alerts/${alertId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ status })
-            });
-            if (res.ok) {
-                toast.success(`Alert marked as ${status}`);
-                fetchAlerts();
+            const [vaccinesRes, stockRes] = await Promise.all([
+                fetch('http://localhost:9999/api/vaccines', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch('http://localhost:9999/api/stock', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+            ]);
+
+            if (vaccinesRes.ok) {
+                const vaccinesData = await vaccinesRes.json();
+                const stockData = stockRes.ok ? await stockRes.json() : [];
+                const now = new Date();
+
+                const mapped: VaccineOption[] = vaccinesData.map((v: { vaccine_id: number; vaccine_name: string }) => {
+                    const vaccineStocks = stockData.filter((s: { vaccine_id: number }) => s.vaccine_id === v.vaccine_id);
+                    const remainingTotal = vaccineStocks.reduce((sum: number, s: { quantity_remaining: number }) => sum + (s.quantity_remaining || 0), 0);
+                    const remainingUsable = vaccineStocks
+                        .filter((s: { expiry_date: string; quantity_remaining: number }) => new Date(s.expiry_date) >= now)
+                        .reduce((sum: number, s: { quantity_remaining: number }) => sum + (s.quantity_remaining || 0), 0);
+
+                    let status: VaccineOption['status'] = 'Available';
+                    if (remainingUsable <= 0) {
+                        status = remainingTotal > 0 ? 'Expired' : 'Out of Stock';
+                    } else if (remainingUsable <= 5) {
+                        status = 'Low Stock';
+                    }
+
+                    return {
+                        vaccine_id: v.vaccine_id,
+                        vaccine_name: v.vaccine_name,
+                        remaining_usable: remainingUsable,
+                        remaining_total: remainingTotal,
+                        status,
+                    };
+                });
+
+                setVaccines(mapped);
             }
         } catch (error) {
             console.error(error);
         }
     };
+
+    useEffect(() => {
+        fetchAlerts();
+        fetchVaccines();
+    }, []);
 
     const openScheduleModal = (alert: Alert) => {
         setSelectedAlert(alert);
@@ -79,6 +118,11 @@ export default function DoctorAlerts() {
     const handleSchedule = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedAlert || !selectedAlert.animal) return;
+
+        if (!scheduleData.vaccine_id) {
+            toast.error('Please select a vaccine');
+            return;
+        }
 
         setIsScheduling(true);
         try {
@@ -105,7 +149,8 @@ export default function DoctorAlerts() {
                 setIsScheduleModalOpen(false);
                 fetchAlerts();
             } else {
-                toast.error('Failed to create schedule');
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.error || 'Failed to create schedule');
             }
         } catch (error) {
             console.error(error);
@@ -116,7 +161,9 @@ export default function DoctorAlerts() {
     };
 
     return (
-        <Card className="rounded-[20px] border-none shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] bg-white overflow-hidden">
+        <div className="space-y-4">
+            <RequestVaccineDialog />
+            <Card className="rounded-[20px] border-none shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] bg-white overflow-hidden">
             <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-gray-50 p-6 bg-white">
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
@@ -145,6 +192,9 @@ export default function DoctorAlerts() {
                                                 ID: #{alert.animal?.animal_id}
                                             </Badge>
                                             <h4 className="font-extrabold text-slate-800 text-sm">{alert.animal?.nickname || 'Unnamed Animal'}</h4>
+                                            <Badge variant="outline" className="bg-blue-50 hover:bg-blue-50 text-blue-700 border-blue-200 rounded-full font-bold px-2 py-0.5 uppercase tracking-wider text-[10px]">
+                                                {alert.animal?.animal_type || 'Unknown Type'}
+                                            </Badge>
                                         </div>
                                         <p className="text-xs text-slate-600 bg-gray-50/50 p-4 rounded-xl border border-gray-100 italic font-medium">
                                             &quot;{alert.symptoms}&quot;
@@ -165,14 +215,6 @@ export default function DoctorAlerts() {
                                             onClick={() => openScheduleModal(alert)}
                                         >
                                             Schedule Vaccine
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="rounded-lg text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 h-9 font-semibold text-xs"
-                                            onClick={() => handleUpdateStatus(alert.alert_id, 'Resolved')}
-                                        >
-                                            Mark Resolved
                                         </Button>
                                     </div>
                                 </div>
@@ -198,8 +240,42 @@ export default function DoctorAlerts() {
                         </DialogHeader>
                         <div className="grid gap-4 py-2">
                             <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="vaccine_id" className="text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Vaccine ID</Label>
-                                <Input id="vaccine_id" type="number" required className="col-span-3 rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-blue-500" value={scheduleData.vaccine_id} onChange={(e) => setScheduleData({ ...scheduleData, vaccine_id: e.target.value })} />
+                                <Label htmlFor="vaccine_id" className="text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Vaccine</Label>
+                                <div className="col-span-3">
+                                    <Select 
+                                        value={scheduleData.vaccine_id} 
+                                        onValueChange={(v) => setScheduleData({ ...scheduleData, vaccine_id: v })}
+                                    >
+                                        <SelectTrigger id="vaccine_id" className="w-full rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-blue-500 shadow-none">
+                                            <SelectValue placeholder="Select Vaccine" />
+                                        </SelectTrigger>
+                                        <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
+                                            {vaccines.map((v) => (
+                                                <SelectItem
+                                                    key={v.vaccine_id}
+                                                    value={v.vaccine_id.toString()}
+                                                    disabled={v.status === 'Expired' || v.status === 'Out of Stock'}
+                                                    className="rounded-lg m-1 cursor-pointer hover:bg-blue-50 focus:bg-blue-50 focus:text-blue-600 py-2.5 transition-colors font-medium"
+                                                >
+                                                    #{v.vaccine_id} - {v.vaccine_name} | {v.status} | Remaining: {v.remaining_usable}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {scheduleData.vaccine_id && (() => {
+                                        const selected = vaccines.find(v => v.vaccine_id.toString() === scheduleData.vaccine_id);
+                                        if (!selected) return null;
+                                        const color =
+                                            selected.status === 'Available' ? 'text-emerald-700' :
+                                            selected.status === 'Low Stock' ? 'text-amber-700' :
+                                            'text-rose-700';
+                                        return (
+                                            <p className={`mt-1 text-[11px] font-semibold ${color}`}>
+                                                Status: {selected.status} | Remaining Stock: {selected.remaining_usable}
+                                            </p>
+                                        );
+                                    })()}
+                                </div>
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
                                 <Label htmlFor="scheduled_date" className="text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Date</Label>
@@ -217,5 +293,6 @@ export default function DoctorAlerts() {
                 </DialogContent>
             </Dialog>
         </Card>
+        </div>
     );
 }

@@ -27,7 +27,17 @@ export default function Navbar() {
 
     const fetchReminders = async () => {
       try {
-        const res = await fetch("http://localhost:9999/api/reminders")
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.error('Authentication token missing.');
+          return;
+        }
+        const res = await fetch('http://localhost:9999/api/reminders', {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` },
+          mode: 'cors',
+          credentials: 'include',
+        });
         if (res.ok) {
           const data = await res.json()
           setReminders(data.reminders || [])

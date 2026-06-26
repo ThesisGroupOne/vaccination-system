@@ -75,17 +75,27 @@ export default function AnimalTable() {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Authentication token missing. Please log in.');
+        setIsLoading(false);
+        return;
+      }
       const res = await fetch('http://localhost:9999/api/animals', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+        mode: 'cors',
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
         setAnimals(data);
+      } else {
+        const err = await res.json();
+        toast.error(`Failed to fetch animals: ${err.error || res.statusText}`);
       }
     } catch (error) {
-      console.error("Failed to fetch animals", error);
+      console.error('Failed to fetch animals', error);
+      toast.error('Network error while fetching animals');
     } finally {
       setIsLoading(false);
     }

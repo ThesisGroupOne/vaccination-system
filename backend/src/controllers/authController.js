@@ -29,8 +29,17 @@ const login = async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET);
-    res.json({ token, role: user.role, name: user.full_name });
+    const token = jwt.sign({ userId: user.user_id, role: user.role, name: user.full_name }, process.env.JWT_SECRET);
+
+    // Log login activity
+    const { logActivity } = require('./activityLogController');
+    await logActivity({
+      action: 'LOGIN', entity: 'User', entity_id: user.user_id,
+      description: `${user.full_name} (${user.role}) logged in`,
+      user_id: user.user_id, user_name: user.full_name, user_role: user.role,
+    });
+
+    res.json({ token, role: user.role, name: user.full_name, user_id: user.user_id });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

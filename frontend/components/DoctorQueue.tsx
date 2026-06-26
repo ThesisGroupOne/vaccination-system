@@ -53,6 +53,26 @@ export default function DoctorQueue() {
         fetchSchedules();
     }, []);
 
+    const getQueuePriority = (schedule: Schedule) => {
+        const isCompleted = schedule.status === 'Completed';
+        const isSoldOrDeceased = schedule.animal?.status === 'Sold' || schedule.animal?.status === 'Deceased';
+        const isPregnant = schedule.animal?.is_pregnant;
+        const canVaccinateNow = !isCompleted && !isSoldOrDeceased && !isPregnant;
+
+        if (canVaccinateNow) return 0; // Vaccinate Now first
+        if (isCompleted) return 1; // Completed next
+        return 2; // Pending but unavailable last
+    };
+
+    const sortedSchedules = [...schedules].sort((a, b) => {
+        const pA = getQueuePriority(a);
+        const pB = getQueuePriority(b);
+        if (pA !== pB) return pA - pB;
+
+        // Same priority: older scheduled items first
+        return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
+    });
+
     const openVaccinateModal = async (schedule: Schedule) => {
         setSelectedSchedule(schedule);
         setDosage('');
@@ -134,7 +154,7 @@ export default function DoctorQueue() {
                     </div>
                     <div className="flex flex-col space-y-0.5">
                         <CardTitle className="text-base font-extrabold text-slate-800">Vaccination Queue</CardTitle>
-                        <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">Scheduled vaccinations waiting for execution.</CardDescription>
+                        <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">Vaccinate Now items are prioritized first.</CardDescription>
                     </div>
                 </div>
             </CardHeader>
@@ -143,9 +163,9 @@ export default function DoctorQueue() {
                     <div className="p-12 text-center">
                         <Loader2Icon className="h-8 w-8 animate-spin mx-auto text-indigo-500 opacity-50" />
                     </div>
-                ) : schedules.length > 0 ? (
+                ) : sortedSchedules.length > 0 ? (
                     <div className="flex flex-col">
-                        {schedules.map((schedule) => {
+                        {sortedSchedules.map((schedule) => {
                             const isSoldOrDeceased = schedule.animal?.status === 'Sold' || schedule.animal?.status === 'Deceased';
                             const isPregnant = schedule.animal?.is_pregnant;
                             const canVaccinate = !isSoldOrDeceased && !isPregnant;
@@ -229,11 +249,14 @@ export default function DoctorQueue() {
                                             value={stockId} 
                                             onChange={(e) => setStockId(e.target.value)}
                                         >
-                                            {availableStocks.map(s => (
-                                                <option key={s.stock_id} value={s.stock_id}>
-                                                    Batch #{s.batch_number} ({s.quantity_remaining} remaining)
-                                                </option>
-                                            ))}
+                                            {availableStocks.map(s => {
+                                                const isExpired = new Date(s.expiry_date) < new Date();
+                                                return (
+                                                    <option key={s.stock_id} value={s.stock_id}>
+                                                        Batch #{s.batch_number} ({s.quantity_remaining} remaining){isExpired ? ' [EXPIRED]' : ''}
+                                                    </option>
+                                                );
+                                            })}
                                         </select>
                                     ) : (
                                         <div className="text-xs text-rose-600 font-bold bg-rose-50 p-3 rounded-xl border border-rose-100">

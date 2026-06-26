@@ -17,7 +17,8 @@ import {
   ActivityIcon,
   ShieldCheckIcon,
   MoreVerticalIcon,
-  UserIcon
+  UserIcon,
+  CalendarIcon
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { canView } from '@/lib/permissions';
@@ -55,6 +56,9 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         ...(canView('Animals', role) ? [{ href: '/dashboard/animals', label: 'Animals Registration', icon: LayersIcon }] : []),
         ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccines', label: 'Vaccines', icon: SyringeIcon }] : []),
         ...(canView('Stock', role) ? [{ href: '/dashboard/stock', label: 'Inventory (Stock)', icon: PackageIcon }] : []),
+        { href: '/dashboard/routine-vaccination', label: 'Routine Vaccination', icon: CalendarIcon },
+        ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccination-list', label: 'Vaccination List', icon: FileTextIcon }] : []),
+        ...(canView('Vaccines', role) ? [{ href: '/dashboard/reports', label: 'Reports', icon: PieChartIcon }] : []),
       ]
     },
     ...(role === 'Admin' ? [
@@ -70,7 +74,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
       label: 'System',
       items: [
         { href: '#', label: 'Settings', icon: SettingsIcon },
-        { href: '#', label: 'Activity Logs', icon: ActivityIcon },
+        { href: '/dashboard/activity-logs', label: 'Activity Logs', icon: ActivityIcon },
       ]
     }] : [])
   ].filter(group => group.items.length > 0);
@@ -95,7 +99,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         </button>
       </div>
 
-      <div className="flex-1 px-4 space-y-5 mt-2 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="flex-1 px-4 space-y-5 mt-2 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 hover:[&::-webkit-scrollbar-thumb]:bg-white/30 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.2)_transparent]">
         {menuGroups.map((group, groupIdx) => (
           <div key={groupIdx} className="space-y-1">
             {!isCollapsed && (

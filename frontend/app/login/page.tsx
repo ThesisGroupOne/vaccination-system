@@ -53,6 +53,7 @@ export default function LoginPage() {
             localStorage.setItem("role", data.role)
             localStorage.setItem("name", data.name)
             localStorage.setItem("email", formData.email)
+            if (data.user_id != null) localStorage.setItem("userId", String(data.user_id))
 
             router.push("/dashboard")
         } catch (err: unknown) {
