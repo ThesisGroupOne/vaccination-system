@@ -166,7 +166,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <CommandIcon className="size-5" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-bold text-sm tracking-tight text-white">Mumin Group</span>
+                  <span className="font-bold text-sm tracking-tight text-white">Livestock Vaccine</span>
                   <span className="text-[10px] text-white/70">Vaccination System</span>
                 </div>
               </a>

@@ -31,13 +31,22 @@ interface SidebarProps {
 
 export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
-  const [user, setUser] = useState({ name: 'User Account', role: 'Staff' });
+  const [user, setUser] = useState({ name: 'User Account', role: 'Staff', profileImage: '' });
 
   useEffect(() => {
-    const name = localStorage.getItem('name');
-    const role = localStorage.getItem('role');
-    if (name) setUser(prev => prev.name === name ? prev : ({ ...prev, name }));
-    if (role) setUser(prev => prev.role === role ? prev : ({ ...prev, role }));
+    const loadUser = () => {
+      const name = localStorage.getItem('name') || 'User Account';
+      const role = localStorage.getItem('role') || 'Staff';
+      const profileImage = localStorage.getItem('profile_image') || '';
+      setUser({ name, role, profileImage });
+    };
+
+    loadUser();
+
+    window.addEventListener('storage', loadUser);
+    return () => {
+      window.removeEventListener('storage', loadUser);
+    };
   }, []);
 
   const role = user.role;
@@ -58,7 +67,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         ...(canView('Stock', role) ? [{ href: '/dashboard/stock', label: 'Inventory (Stock)', icon: PackageIcon }] : []),
         { href: '/dashboard/routine-vaccination', label: 'Routine Vaccination', icon: CalendarIcon },
         ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccination-list', label: 'Vaccination List', icon: FileTextIcon }] : []),
-        ...(canView('Vaccines', role) ? [{ href: '/dashboard/reports', label: 'Reports', icon: PieChartIcon }] : []),
+        ...(canView('Reports', role) ? [{ href: '/dashboard/reports', label: 'Reports', icon: PieChartIcon }] : []),
       ]
     },
     ...(role === 'Admin' ? [
@@ -66,15 +75,14 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         label: 'Access Control',
         items: [
           { href: '/dashboard/users', label: 'Users', icon: UsersIcon },
-          { href: '#', label: 'Roles & Permissions', icon: ShieldCheckIcon },
         ]
       }
     ] : []),
     ...(role === 'Admin' || role === 'Doctor' ? [{
       label: 'System',
       items: [
-        { href: '#', label: 'Settings', icon: SettingsIcon },
-        { href: '/dashboard/activity-logs', label: 'Activity Logs', icon: ActivityIcon },
+        { href: '/dashboard/settings', label: 'Settings', icon: SettingsIcon },
+        ...(canView('ActivityLogs', role) ? [{ href: '/dashboard/activity-logs', label: 'Activity Logs', icon: ActivityIcon }] : []),
       ]
     }] : [])
   ].filter(group => group.items.length > 0);
@@ -86,10 +94,10 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         <div className={`flex items-center gap-3 transition-all duration-300 ${isCollapsed ? 'opacity-0 invisible w-0' : 'opacity-100 visible'}`}>
           <img 
             src="/img/463865371_8646484958778270_5136213218242522965_n-removebg-preview.png" 
-            alt="Mumin Group Logo" 
-            className="w-11 h-11 object-contain rounded-xl bg-white/20 shadow-sm" 
+            alt="Livestock Vaccination System Logo" 
+            className={`transition-all duration-300 ${isCollapsed ? 'w-10 h-10' : 'w-9 h-9'} rounded-xl shadow-sm`} 
           />
-          <span className="text-lg font-bold tracking-tight text-white whitespace-nowrap">Mumin Group</span>
+          <span className="text-[15px] font-bold tracking-tight text-white whitespace-nowrap">Livestock Vaccine</span>
         </div>
         <button
           onClick={onToggle}
@@ -142,8 +150,12 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
       <div className="p-4 mt-auto">
         <div className={`bg-black/10 rounded-[14px] p-3 flex items-center gap-3 transition-all duration-300 border border-white/5 hover:bg-black/20 cursor-pointer ${isCollapsed ? 'justify-center p-2' : ''}`}>
-          <div className="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center flex-shrink-0 shadow-inner">
-            <UserIcon className="w-5 h-5 text-slate-300" />
+          <div className="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center flex-shrink-0 shadow-inner overflow-hidden">
+            {user.profileImage ? (
+              <img src={`http://localhost:9999${user.profileImage}`} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <UserIcon className="w-5 h-5 text-slate-300" />
+            )}
           </div>
           {!isCollapsed && (
             <div className="flex flex-col overflow-hidden flex-1">

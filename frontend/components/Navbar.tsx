@@ -17,6 +17,7 @@ export default function Navbar() {
   const router = useRouter()
   const [userName, setUserName] = useState<string | null>(null)
   const [role, setRole] = useState<string | null>(null)
+  const [profileImage, setProfileImage] = useState<string | null>(null)
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [showReminders, setShowReminders] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
@@ -24,12 +25,20 @@ export default function Navbar() {
   useEffect(() => {
     setUserName(localStorage.getItem('name'))
     setRole(localStorage.getItem('role'))
+    setProfileImage(localStorage.getItem('profile_image'))
+
+    const handleStorageChange = () => {
+      setUserName(localStorage.getItem('name'))
+      setRole(localStorage.getItem('role'))
+      setProfileImage(localStorage.getItem('profile_image'))
+    }
+
+    window.addEventListener('storage', handleStorageChange)
 
     const fetchReminders = async () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) {
-          console.error('Authentication token missing.');
           return;
         }
         const res = await fetch('http://localhost:9999/api/reminders', {
@@ -48,9 +57,11 @@ export default function Navbar() {
     }
 
     fetchReminders()
-    // Refresh reminders every 5 minutes
     const interval = setInterval(fetchReminders, 5 * 60 * 1000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('storage', handleStorageChange)
+    }
   }, [])
 
   // Close dropdown when clicking outside
@@ -81,7 +92,7 @@ export default function Navbar() {
     <div className="bg-white border-b border-gray-100 py-3 px-8 flex justify-between items-center sticky top-0 z-30 transition-all h-20">
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-extrabold text-blue-600 tracking-tight">
-          Mumin Group System
+          Livestock Vaccination System
         </h1>
       </div>
 
@@ -152,7 +163,11 @@ export default function Navbar() {
 
         <div className="flex items-center gap-3 cursor-pointer group relative">
            <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shadow-sm flex items-center justify-center">
-              <span className="font-bold text-slate-600 text-sm">{userName?.charAt(0).toUpperCase() || 'U'}</span>
+              {profileImage ? (
+                <img src={`http://localhost:9999${profileImage}`} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-bold text-slate-600 text-sm">{userName?.charAt(0).toUpperCase() || 'U'}</span>
+              )}
            </div>
            
            <div className="hidden sm:flex flex-col">

@@ -11,7 +11,8 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     const [isAuth, setIsAuth] = useState<boolean | null>(null)
     const [isCollapsed, setIsCollapsed] = useState(false)
 
-    const isPublicRoute = pathname === "/login" || pathname === "/register" || pathname === "/"
+    const publicRoutes = ["/login", "/register", "/", "/forgot-password", "/reset-password"]
+    const isPublicRoute = publicRoutes.includes(pathname)
 
     useEffect(() => {
         const token = localStorage.getItem("token")
@@ -33,9 +34,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     return (
         <div className="flex min-h-screen bg-gray-50/50">
             <Sidebar isCollapsed={isCollapsed} onToggle={() => setIsCollapsed(!isCollapsed)} />
-            <div className={`flex-1 flex flex-col transition-all duration-300 ${isCollapsed ? 'pl-20' : 'pl-64'}`}>
+            <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isCollapsed ? 'pl-20' : 'pl-64'}`}>
                 <Navbar />
-                <main className="p-6 flex-1">{children}</main>
+                <main className="p-6 flex-1 min-w-0">{children}</main>
             </div>
         </div>
     )

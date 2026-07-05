@@ -22,13 +22,31 @@ function toDisplayValue(v) {
   return String(v);
 }
 
-async function buildVaccinationReport({ reportType, singleId, from, to }) {
+async function buildVaccinationReport({ reportType, singleId, from, to, farmId, animalType, gender, regFrom, regTo }) {
   const commonDateFilter = parseDateRange(from, to, 'date_administered');
-  const animalFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+  const animalIdFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+
+  const animalConditions = {};
+  if (farmId) animalConditions.farm_id = farmId;
+  if (animalType) animalConditions.animal_type = animalType;
+  if (gender) animalConditions.biological_type = gender;
+  if (regFrom || regTo) {
+    const regFilter = parseDateRange(regFrom, regTo, 'created_at');
+    Object.assign(animalConditions, regFilter);
+  }
+
+  const whereCondition = {
+    ...animalIdFilter,
+    ...commonDateFilter,
+  };
+
+  if (Object.keys(animalConditions).length > 0) {
+    whereCondition.animal = animalConditions;
+  }
 
   const [standardRows, routineRows] = await Promise.all([
     prisma.vaccination.findMany({
-      where: { ...animalFilter, ...commonDateFilter },
+      where: whereCondition,
       include: {
         animal: { include: { farm: { select: { farm_name: true } } } },
         vaccine: { select: { vaccine_name: true } },
@@ -37,7 +55,7 @@ async function buildVaccinationReport({ reportType, singleId, from, to }) {
       orderBy: { date_administered: 'desc' },
     }),
     prisma.routineVaccinationRecord.findMany({
-      where: { ...animalFilter, ...commonDateFilter },
+      where: whereCondition,
       include: {
         animal: { include: { farm: { select: { farm_name: true } } } },
         vaccine: { select: { vaccine_name: true } },
@@ -140,12 +158,31 @@ async function buildRoutineCampaignReport({ reportType, singleId, from, to }) {
   return { columns, rows };
 }
 
-async function buildEmergencyAlertReport({ reportType, singleId, from, to }) {
+async function buildEmergencyAlertReport({ reportType, singleId, from, to, farmId, animalType, gender, regFrom, regTo }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
   const idFilter = reportType === 'single' && singleId ? { alert_id: singleId } : {};
 
+  const whereCondition = {
+    ...idFilter,
+    ...commonDateFilter,
+  };
+
+  if (farmId) whereCondition.farm_id = farmId;
+
+  const animalConditions = {};
+  if (animalType) animalConditions.animal_type = animalType;
+  if (gender) animalConditions.biological_type = gender;
+  if (regFrom || regTo) {
+    const regFilter = parseDateRange(regFrom, regTo, 'created_at');
+    Object.assign(animalConditions, regFilter);
+  }
+
+  if (Object.keys(animalConditions).length > 0) {
+    whereCondition.animal = animalConditions;
+  }
+
   const alerts = await prisma.alert.findMany({
-    where: { ...idFilter, ...commonDateFilter },
+    where: whereCondition,
     include: {
       animal: { select: { animal_id: true, nickname: true, animal_type: true } },
       farm: { select: { farm_name: true } },
@@ -261,12 +298,26 @@ async function buildFarmReport({ reportType, singleId, from, to }) {
   return { columns, rows };
 }
 
-async function buildAnimalReport({ reportType, singleId, from, to }) {
+async function buildAnimalReport({ reportType, singleId, from, to, farmId, animalType, gender, regFrom, regTo }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
   const idFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
 
+  const whereCondition = {
+    ...idFilter,
+    ...commonDateFilter,
+  };
+
+  if (farmId) whereCondition.farm_id = farmId;
+  if (animalType) whereCondition.animal_type = animalType;
+  if (gender) whereCondition.biological_type = gender;
+
+  if (regFrom || regTo) {
+    const regFilter = parseDateRange(regFrom, regTo, 'created_at');
+    Object.assign(whereCondition, regFilter);
+  }
+
   const animals = await prisma.animal.findMany({
-    where: { ...idFilter, ...commonDateFilter },
+    where: whereCondition,
     include: {
       farm: { select: { farm_name: true } },
       _count: { select: { vaccinations: true, routineRecords: true, alerts: true, schedules: true } },
@@ -307,6 +358,186 @@ async function buildAnimalReport({ reportType, singleId, from, to }) {
   return { columns, rows };
 }
 
+async function buildUpcomingVaccinations({ reportType, singleId, from, to, farmId, animalType, gender, regFrom, regTo }) {
+  const commonDateFilter = parseDateRange(from, to, 'scheduled_date');
+  const animalIdFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+
+  const animalConditions = {};
+  if (farmId) animalConditions.farm_id = farmId;
+  if (animalType) animalConditions.animal_type = animalType;
+  if (gender) animalConditions.biological_type = gender;
+  if (regFrom || regTo) Object.assign(animalConditions, parseDateRange(regFrom, regTo, 'created_at'));
+
+  const whereCondition = {
+    ...animalIdFilter,
+    ...commonDateFilter,
+    status: 'Pending',
+  };
+  if (Object.keys(animalConditions).length > 0) whereCondition.animal = animalConditions;
+
+  const schedules = await prisma.vaccinationSchedule.findMany({
+    where: whereCondition,
+    include: {
+      animal: { include: { farm: { select: { farm_name: true } } } },
+      vaccine: { select: { vaccine_name: true } },
+    },
+    orderBy: { scheduled_date: 'asc' },
+  });
+
+  const rows = schedules.map(s => ({
+    schedule_id: s.schedule_id,
+    animal_id: s.animal_id,
+    nickname: s.animal?.nickname || '-',
+    animal_type: s.animal?.animal_type || '-',
+    farm_name: s.animal?.farm?.farm_name || '-',
+    vaccine: s.vaccine?.vaccine_name || '-',
+    schedule_type: s.schedule_type,
+    scheduled_date: s.scheduled_date,
+    status: s.status,
+  }));
+  const columns = [
+    { key: 'schedule_id', label: 'Schedule ID' },
+    { key: 'animal_id', label: 'Animal ID' },
+    { key: 'nickname', label: 'Nickname' },
+    { key: 'animal_type', label: 'Animal Type' },
+    { key: 'farm_name', label: 'Farm' },
+    { key: 'vaccine', label: 'Vaccine' },
+    { key: 'schedule_type', label: 'Type' },
+    { key: 'scheduled_date', label: 'Due Date' },
+    { key: 'status', label: 'Status' }
+  ];
+  return { columns, rows };
+}
+
+async function buildPendingAlerts({ reportType, singleId, from, to, farmId, animalType, gender, regFrom, regTo }) {
+  const commonDateFilter = parseDateRange(from, to, 'created_at');
+  const idFilter = reportType === 'single' && singleId ? { alert_id: singleId } : {};
+
+  const whereCondition = {
+    ...idFilter,
+    ...commonDateFilter,
+    status: 'Pending',
+  };
+  if (farmId) whereCondition.farm_id = farmId;
+
+  const animalConditions = {};
+  if (animalType) animalConditions.animal_type = animalType;
+  if (gender) animalConditions.biological_type = gender;
+  if (regFrom || regTo) Object.assign(animalConditions, parseDateRange(regFrom, regTo, 'created_at'));
+
+  if (Object.keys(animalConditions).length > 0) whereCondition.animal = animalConditions;
+
+  const alerts = await prisma.alert.findMany({
+    where: whereCondition,
+    include: {
+      animal: { select: { animal_id: true, nickname: true, animal_type: true } },
+      farm: { select: { farm_name: true } },
+      user: { select: { full_name: true } },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+
+  const rows = alerts.map((a) => ({
+    alert_id: a.alert_id,
+    animal_id: a.animal?.animal_id ?? '-',
+    nickname: a.animal?.nickname || '-',
+    animal_type: a.animal?.animal_type || '-',
+    farm: a.farm?.farm_name || '-',
+    symptoms: a.symptoms,
+    status: a.status,
+    reported_by: a.user?.full_name || '-',
+    reported_at: a.created_at,
+  }));
+  const columns = [
+    { key: 'alert_id', label: 'Alert ID' },
+    { key: 'animal_id', label: 'Animal ID' },
+    { key: 'nickname', label: 'Nickname' },
+    { key: 'animal_type', label: 'Animal Type' },
+    { key: 'farm', label: 'Farm' },
+    { key: 'symptoms', label: 'Symptoms' },
+    { key: 'status', label: 'Status' },
+    { key: 'reported_by', label: 'Reported By' },
+    { key: 'reported_at', label: 'Reported At' },
+  ];
+  return { columns, rows };
+}
+
+async function buildLowStock({ reportType, singleId, from, to }) {
+  const commonDateFilter = parseDateRange(from, to, 'purchase_date');
+  const idFilter = reportType === 'single' && singleId ? { stock_id: singleId } : {};
+
+  const stocks = await prisma.vaccineStock.findMany({
+    where: { 
+      ...idFilter, 
+      ...commonDateFilter,
+      OR: [
+        { quantity_remaining: { lte: 5 } },
+        { expiry_date: { lt: new Date() } }
+      ]
+    },
+    include: { vaccine: { select: { vaccine_name: true } } },
+    orderBy: { purchase_date: 'desc' },
+  });
+
+  const rows = stocks.map((s) => ({
+    stock_id: s.stock_id,
+    vaccine: s.vaccine?.vaccine_name || '-',
+    batch_number: s.batch_number || '-',
+    supplier: s.supplier_name || '-',
+    purchased: s.quantity_purchased,
+    remaining: s.quantity_remaining,
+    purchase_price: s.purchase_price,
+    purchase_date: s.purchase_date,
+    expiry_date: s.expiry_date,
+    status: new Date(s.expiry_date) < new Date()
+      ? 'Expired'
+      : s.quantity_remaining <= 0
+        ? 'Out of Stock'
+        : 'Low Stock',
+  }));
+  const columns = [
+    { key: 'stock_id', label: 'Stock ID' },
+    { key: 'vaccine', label: 'Vaccine' },
+    { key: 'batch_number', label: 'Batch' },
+    { key: 'supplier', label: 'Supplier' },
+    { key: 'purchased', label: 'Purchased Qty' },
+    { key: 'remaining', label: 'Remaining Qty' },
+    { key: 'purchase_price', label: 'Price' },
+    { key: 'purchase_date', label: 'Purchase Date' },
+    { key: 'expiry_date', label: 'Expiry Date' },
+    { key: 'status', label: 'Status' },
+  ];
+  return { columns, rows };
+}
+
+async function buildUsersReport({ reportType, singleId, from, to }) {
+  const commonDateFilter = parseDateRange(from, to, 'created_at');
+  const idFilter = reportType === 'single' && singleId ? { user_id: singleId } : {};
+
+  const users = await prisma.user.findMany({
+    where: { ...idFilter, ...commonDateFilter },
+    orderBy: { created_at: 'desc' }
+  });
+  
+  const rows = users.map(u => ({
+    user_id: u.user_id,
+    full_name: u.full_name,
+    phone: u.phone,
+    email: u.email,
+    role: u.role,
+    created_at: u.created_at,
+  }));
+  const columns = [
+    { key: 'user_id', label: 'User ID' },
+    { key: 'full_name', label: 'Full Name' },
+    { key: 'phone', label: 'Phone' },
+    { key: 'email', label: 'Email' },
+    { key: 'role', label: 'Role' },
+    { key: 'created_at', label: 'Registered' }
+  ];
+  return { columns, rows };
+}
+
 const getVaccinationReport = async (req, res) => {
   try {
     const moduleName = req.query.module || 'vaccinations'; // vaccinations | routine_campaigns | emergency_alerts | stock | farms
@@ -315,8 +546,13 @@ const getVaccinationReport = async (req, res) => {
     const singleId = req.query.single_id ? parseInt(req.query.single_id) : null;
     const from = req.query.from || null;
     const to = req.query.to || null;
+    const farmId = req.query.farm_id ? parseInt(req.query.farm_id) : null;
+    const animalType = req.query.animal_type || null;
+    const gender = req.query.gender || null;
+    const regFrom = req.query.reg_from || null;
+    const regTo = req.query.reg_to || null;
 
-    if (!['vaccinations', 'routine_campaigns', 'emergency_alerts', 'stock', 'farms', 'animals'].includes(moduleName)) {
+    if (!['vaccinations', 'upcoming_vaccinations', 'routine_campaigns', 'emergency_alerts', 'pending_alerts', 'stock', 'low_stock', 'farms', 'animals', 'users'].includes(moduleName)) {
       return res.status(400).json({ error: 'Invalid report module.' });
     }
     if (!['all', 'single', 'between'].includes(reportType)) {
@@ -325,20 +561,31 @@ const getVaccinationReport = async (req, res) => {
     if (reportType === 'single' && !singleId) {
       return res.status(400).json({ error: 'single_id is required for single report.' });
     }
-    if (reportType === 'between' && (!from || !to)) {
-      return res.status(400).json({ error: 'from and to are required for between report.' });
-    }
 
     const builders = {
       vaccinations: buildVaccinationReport,
+      upcoming_vaccinations: buildUpcomingVaccinations,
       routine_campaigns: buildRoutineCampaignReport,
       emergency_alerts: buildEmergencyAlertReport,
+      pending_alerts: buildPendingAlerts,
       stock: buildStockReport,
+      low_stock: buildLowStock,
       farms: buildFarmReport,
       animals: buildAnimalReport,
+      users: buildUsersReport,
     };
 
-    const { columns, rows } = await builders[moduleName]({ reportType, singleId, from, to });
+    const { columns, rows } = await builders[moduleName]({ 
+      reportType, 
+      singleId, 
+      from, 
+      to,
+      farmId,
+      animalType,
+      gender,
+      regFrom,
+      regTo
+    });
 
     if (format === 'pdf') {
       const doc = new PDFDocument({ margin: 30, size: 'A4' });

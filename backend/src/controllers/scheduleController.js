@@ -131,6 +131,23 @@ const updateScheduleStatus = async (req, res) => {
       where: { schedule_id: parseInt(id) },
       data: { status },
     });
+
+    // If an Emergency vaccination schedule is completed, mark the corresponding animal's active alert as Resolved
+    if (status === 'Completed' && updatedSchedule.schedule_type === 'Emergency' && updatedSchedule.animal_id) {
+      const activeAlert = await prisma.alert.findFirst({
+        where: {
+          animal_id: updatedSchedule.animal_id,
+          status: 'Scheduled',
+        },
+      });
+      if (activeAlert) {
+        await prisma.alert.update({
+          where: { alert_id: activeAlert.alert_id },
+          data: { status: 'Resolved' },
+        });
+      }
+    }
+
     res.json(updatedSchedule);
   } catch (error) {
     res.status(400).json({ error: error.message });

@@ -14,7 +14,10 @@ model User {
   email        String       @unique
   password     String
   role         String
-  created_at   DateTime     @default(now())
+  created_at         DateTime     @default(now())
+  reset_token        String?
+  profile_image      String?
+  reset_token_expiry DateTime?
 
   vaccinations        Vaccination[]
   alerts              Alert[]

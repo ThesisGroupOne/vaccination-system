@@ -154,7 +154,7 @@ export default function FarmTable() {
                         </div>
                         <div className="flex flex-col space-y-0.5">
                             <CardTitle className="text-base font-extrabold text-slate-800">Farm Locations</CardTitle>
-                            <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">Manage Mumin Group farm units and centers.</CardDescription>
+                            <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">Manage livestock vaccination farm units and centers.</CardDescription>
                         </div>
                     </div>
                 </div>
@@ -266,7 +266,7 @@ export default function FarmTable() {
                                         {canEdit('Farms', role) && (
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:bg-slate-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:bg-slate-50 rounded-lg transition-opacity">
                                                         <MoreHorizontalIcon className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>

@@ -53,6 +53,11 @@ export default function LoginPage() {
             localStorage.setItem("role", data.role)
             localStorage.setItem("name", data.name)
             localStorage.setItem("email", formData.email)
+            if (data.profile_image != null) {
+                localStorage.setItem("profile_image", data.profile_image)
+            } else {
+                localStorage.removeItem("profile_image")
+            }
             if (data.user_id != null) localStorage.setItem("userId", String(data.user_id))
 
             router.push("/dashboard")
@@ -79,8 +84,12 @@ export default function LoginPage() {
 
                 <div className="w-full max-w-md mx-auto px-6 sm:px-12 relative z-10">
                     <div className="mb-10 animate-fade-in-up">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center mb-8 shadow-lg shadow-blue-500/30 transform transition-transform hover:scale-105">
-                            <ShieldCheck className="h-7 w-7 text-white" />
+                        <div className="w-16 h-16 p-2 rounded-2xl bg-white/40 backdrop-blur-2xl border border-slate-200 flex items-center justify-center mb-8 shadow-lg shadow-slate-200/50 transform transition-transform hover:scale-105">
+                            <img 
+                                src="/img/463865371_8646484958778270_5136213218242522965_n-removebg-preview.png" 
+                                alt="Livestock System Logo" 
+                                className="w-full h-full object-contain drop-shadow-md"
+                            />
                         </div>
                         <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-3">
                             Welcome Back
@@ -200,7 +209,7 @@ export default function LoginPage() {
                     <div className="absolute inset-0 z-30 flex flex-col justify-between p-16">
                         <div className="flex items-center space-x-3 text-white/90">
                             <Activity className="h-8 w-8" />
-                            <span className="text-xl font-bold tracking-wider uppercase">Mumin Group</span>
+                            <span className="text-xl font-bold tracking-wider uppercase">Livestock Vaccine</span>
                         </div>
 
                         <div className="max-w-xl">
@@ -209,7 +218,7 @@ export default function LoginPage() {
                                 <span className="text-sm font-semibold text-white">System Operations Active</span>
                             </div>
                             <h2 className="text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-                                Modern <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">Livestock</span> Management
+                                Livestock <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">Vaccination</span> System
                             </h2>
                             <p className="text-lg text-blue-100/80 leading-relaxed font-medium">
                                 Empowering veterinary teams and farm managers with real-time data, comprehensive health tracking, and seamless inventory synchronization.

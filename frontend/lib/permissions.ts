@@ -7,7 +7,7 @@ export const PERMISSIONS = {
   },
   Animals: {
     view: ['Admin', 'Doctor', 'Farm Worker'],
-    edit: ['Admin', 'Doctor'],
+    edit: ['Admin'],
   },
   Vaccinations: {
     view: ['Admin', 'Doctor', 'Farm Worker'],
@@ -35,6 +35,14 @@ export const PERMISSIONS = {
   },
   Farms: {
     view: ['Admin', 'Doctor', 'Farm Worker'],
+    edit: ['Admin'],
+  },
+  Reports: {
+    view: ['Admin'],
+    edit: ['Admin'],
+  },
+  ActivityLogs: {
+    view: ['Admin'],
     edit: ['Admin'],
   }
 };

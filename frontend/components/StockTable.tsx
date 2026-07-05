@@ -423,7 +423,7 @@ export default function StockTable() {
                         {canEdit('Stock', role) && (
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:bg-slate-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:bg-slate-50 rounded-lg transition-opacity">
                                         <MoreHorizontalIcon className="h-4 w-4" />
                                     </Button>
                                 </DropdownMenuTrigger>
