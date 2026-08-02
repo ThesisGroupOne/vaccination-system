@@ -12,6 +12,20 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RequestVaccineDialog } from '@/components/ui/request-vaccine-dialog';
 
+function pad2(n: number) {
+    return String(n).padStart(2, '0');
+}
+
+// For <input type="datetime-local" /> the value must be: YYYY-MM-DDTHH:mm (local time)
+function toLocalDatetimeInputValue(d: Date) {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function todayYmd() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 interface Alert {
     alert_id: number;
     animal?: { animal_id: number; nickname?: string; animal_type?: string };
@@ -26,6 +40,7 @@ interface VaccineOption {
     vaccine_name: string;
     remaining_usable: number;
     remaining_total: number;
+    target_animal: string;
     status: 'Available' | 'Low Stock' | 'Expired' | 'Out of Stock';
 }
 
@@ -38,6 +53,11 @@ export default function DoctorAlerts() {
     const [scheduleData, setScheduleData] = useState({ vaccine_id: '', scheduled_date: '', schedule_type: 'Emergency' });
     const [isScheduling, setIsScheduling] = useState(false);
     const [vaccines, setVaccines] = useState<VaccineOption[]>([]);
+
+    const t = new Date();
+    const scheduleMin = toLocalDatetimeInputValue(new Date(t.getFullYear(), t.getMonth(), t.getDate(), 0, 0, 0, 0));
+    const scheduleMax = toLocalDatetimeInputValue(new Date(t.getFullYear(), t.getMonth(), t.getDate(), 23, 59, 0, 0));
+    const scheduleToday = todayYmd();
 
     const fetchAlerts = async () => {
         setIsLoading(true);
@@ -74,7 +94,7 @@ export default function DoctorAlerts() {
                 const stockData = stockRes.ok ? await stockRes.json() : [];
                 const now = new Date();
 
-                const mapped: VaccineOption[] = vaccinesData.map((v: { vaccine_id: number; vaccine_name: string }) => {
+                const mapped: VaccineOption[] = vaccinesData.map((v: { vaccine_id: number; vaccine_name: string; target_animal: string }) => {
                     const vaccineStocks = stockData.filter((s: { vaccine_id: number }) => s.vaccine_id === v.vaccine_id);
                     const remainingTotal = vaccineStocks.reduce((sum: number, s: { quantity_remaining: number }) => sum + (s.quantity_remaining || 0), 0);
                     const remainingUsable = vaccineStocks
@@ -91,6 +111,7 @@ export default function DoctorAlerts() {
                     return {
                         vaccine_id: v.vaccine_id,
                         vaccine_name: v.vaccine_name,
+                        target_animal: v.target_animal,
                         remaining_usable: remainingUsable,
                         remaining_total: remainingTotal,
                         status,
@@ -111,13 +132,25 @@ export default function DoctorAlerts() {
 
     const openScheduleModal = (alert: Alert) => {
         setSelectedAlert(alert);
-        setScheduleData({ vaccine_id: '', scheduled_date: '', schedule_type: 'Emergency' });
+        // Default to "today" so the user cannot pick a past/future date.
+        setScheduleData({ vaccine_id: '', scheduled_date: scheduleMin, schedule_type: 'Emergency' });
         setIsScheduleModalOpen(true);
     };
 
     const handleSchedule = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedAlert || !selectedAlert.animal) return;
+
+        if (!scheduleData.scheduled_date) {
+            toast.error('Please select a date and time.');
+            return;
+        }
+
+        const pickedYmd = scheduleData.scheduled_date.slice(0, 10);
+        if (pickedYmd !== scheduleToday) {
+            toast.error('Date must be today only (past and future dates are not allowed).');
+            return;
+        }
 
         if (!scheduleData.vaccine_id) {
             toast.error('Please select a vaccine');
@@ -185,21 +218,21 @@ export default function DoctorAlerts() {
                     <div className="flex flex-col">
                         {alerts.map((alert) => (
                             <div key={alert.alert_id} className="p-6 hover:bg-slate-50 transition-colors group border-b border-gray-50">
-                                <div className="flex items-start justify-between gap-4">
+                                <div className="flex flex-col gap-4">
                                     <div className="space-y-3">
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex flex-wrap items-center gap-2">
                                             <Badge variant="outline" className="bg-rose-50 hover:bg-rose-50 text-rose-600 border-rose-200 rounded-full font-bold px-2 py-0.5 uppercase tracking-wider text-[10px]">
                                                 ID: #{alert.animal?.animal_id}
                                             </Badge>
-                                            <h4 className="font-extrabold text-slate-800 text-sm">{alert.animal?.nickname || 'Unnamed Animal'}</h4>
+                                            <h4 className="font-extrabold text-slate-800 text-sm">{alert.animal?.nickname || 'Unnamed'}</h4>
                                             <Badge variant="outline" className="bg-blue-50 hover:bg-blue-50 text-blue-700 border-blue-200 rounded-full font-bold px-2 py-0.5 uppercase tracking-wider text-[10px]">
-                                                {alert.animal?.animal_type || 'Unknown Type'}
+                                                {alert.animal?.animal_type || 'Unknown'}
                                             </Badge>
                                         </div>
                                         <p className="text-xs text-slate-600 bg-gray-50/50 p-4 rounded-xl border border-gray-100 italic font-medium">
                                             &quot;{alert.symptoms}&quot;
                                         </p>
-                                        <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                        <div className="flex flex-wrap items-center gap-3 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                                             <span className="flex items-center gap-1.5">
                                                 <MapPinIcon className="h-3 w-3 text-rose-500" /> {alert.farm?.farm_name}
                                             </span>
@@ -208,10 +241,10 @@ export default function DoctorAlerts() {
                                             </span>
                                         </div>
                                     </div>
-                                    <div className="flex flex-col gap-2">
+                                    <div className="mt-1">
                                         <Button
                                             size="sm"
-                                            className="rounded-lg bg-brand-primary hover:bg-brand-primary-hover text-white shadow-sm font-semibold h-9 px-4 text-xs"
+                                            className="w-full rounded-lg bg-brand-primary hover:bg-brand-primary-hover text-white shadow-sm font-semibold h-10 px-4 text-xs"
                                             onClick={() => openScheduleModal(alert)}
                                         >
                                             Schedule Vaccine
@@ -250,7 +283,7 @@ export default function DoctorAlerts() {
                                             <SelectValue placeholder="Select Vaccine" />
                                         </SelectTrigger>
                                         <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
-                                            {vaccines.map((v) => (
+                                            {vaccines.filter(v => v.target_animal === selectedAlert?.animal?.animal_type).map((v) => (
                                                 <SelectItem
                                                     key={v.vaccine_id}
                                                     value={v.vaccine_id.toString()}
@@ -260,6 +293,9 @@ export default function DoctorAlerts() {
                                                     #{v.vaccine_id} - {v.vaccine_name} | {v.status} | Remaining: {v.remaining_usable}
                                                 </SelectItem>
                                             ))}
+                                            {vaccines.filter(v => v.target_animal === selectedAlert?.animal?.animal_type).length === 0 && (
+                                                <div className="p-4 text-xs text-slate-500 text-center font-medium">No vaccines available for {selectedAlert?.animal?.animal_type}s.</div>
+                                            )}
                                         </SelectContent>
                                     </Select>
                                     {scheduleData.vaccine_id && (() => {
@@ -279,7 +315,16 @@ export default function DoctorAlerts() {
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
                                 <Label htmlFor="scheduled_date" className="text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Date</Label>
-                                <Input id="scheduled_date" type="datetime-local" required className="col-span-3 rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-blue-500" value={scheduleData.scheduled_date} onChange={(e) => setScheduleData({ ...scheduleData, scheduled_date: e.target.value })} />
+                                <Input
+                                    id="scheduled_date"
+                                    type="datetime-local"
+                                    required
+                                    min={scheduleMin}
+                                    max={scheduleMax}
+                                    className="col-span-3 rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-blue-500"
+                                    value={scheduleData.scheduled_date}
+                                    onChange={(e) => setScheduleData({ ...scheduleData, scheduled_date: e.target.value })}
+                                />
                             </div>
                         </div>
                         <DialogFooter className="mt-6">

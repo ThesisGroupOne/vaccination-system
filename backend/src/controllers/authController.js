@@ -40,6 +40,9 @@ const login = async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    if (user.is_active === false) {
+      return res.status(403).json({ error: 'This account is disabled. Contact the administrator.' });
+    }
     const token = jwt.sign({ userId: user.user_id, role: user.role, name: user.full_name }, process.env.JWT_SECRET);
 
     // Log login activity
@@ -50,7 +53,7 @@ const login = async (req, res) => {
       user_id: user.user_id, user_name: user.full_name, user_role: user.role,
     });
 
-    res.json({ token, role: user.role, name: user.full_name, user_id: user.user_id, profile_image: user.profile_image });
+    res.json({ token, role: user.role, name: user.full_name, user_id: user.user_id, profile_image: user.profile_image, is_active: user.is_active });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

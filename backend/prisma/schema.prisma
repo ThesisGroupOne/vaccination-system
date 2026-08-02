@@ -14,6 +14,9 @@ model User {
   email        String       @unique
   password     String
   role         String
+  is_active    Boolean      @default(true)
+  /// Doctor with work authorization — only this user receives/sees doctor jobs
+  is_authorized      Boolean      @default(false)
   created_at         DateTime     @default(now())
   reset_token        String?
   profile_image      String?
@@ -21,8 +24,12 @@ model User {
 
   vaccinations        Vaccination[]
   alerts              Alert[]
+  schedulesAssigned   VaccinationSchedule[]        @relation("ScheduleDoctor")
   campaignsAsDoctor   RoutineVaccinationCampaign[] @relation("CampaignDoctor")
   routineRecordsGiven RoutineVaccinationRecord[]   @relation("RoutineVaccinationAdmin")
+  mortalityRecords    MortalityRecord[]
+  delegationsSent     TaskDelegation[]             @relation("DelegationFrom")
+  delegationsReceived TaskDelegation[]             @relation("DelegationTo")
 }
 
 model Farm {
@@ -48,7 +55,8 @@ model Animal {
   animal_type     String
   biological_type String       @default("Unknown")
   is_pregnant     Boolean      @default(false)
-  age             Int
+  age             Float
+  weight          Float?
   status          AnimalStatus @default(Active)
   farm_id         Int
   created_at      DateTime     @default(now())
@@ -58,6 +66,7 @@ model Animal {
   schedules      VaccinationSchedule[]
   alerts         Alert[]
   routineRecords RoutineVaccinationRecord[]
+  mortalityRecord MortalityRecord?
 }
 
 model Vaccine {
@@ -66,6 +75,7 @@ model Vaccine {
   description               String?
   validity_period_days      Int
   recommended_interval_days Int
+  target_animal             String   @default("All")
   created_at                DateTime @default(now())
 
   stocks           VaccineStock[]
@@ -86,6 +96,7 @@ model VaccineStock {
   purchase_price     Float
   purchase_date      DateTime
   expiry_date        DateTime
+  is_archived        Boolean  @default(false)
   created_at         DateTime @default(now())
 
   vaccine        Vaccine                    @relation(fields: [vaccine_id], references: [vaccine_id])
@@ -108,6 +119,7 @@ model Vaccination {
   vaccine Vaccine      @relation(fields: [vaccine_id], references: [vaccine_id])
   user    User         @relation(fields: [administered_by], references: [user_id])
   stock   VaccineStock @relation(fields: [stock_id], references: [stock_id])
+  mortalityRecords MortalityRecord[]
 }
 
 model VaccinationSchedule {
@@ -118,11 +130,14 @@ model VaccinationSchedule {
   schedule_type  String
   scheduled_date DateTime
   status         String   @default("Pending")
+  doctor_id      Int?
   created_at     DateTime @default(now())
 
-  vaccine Vaccine @relation(fields: [vaccine_id], references: [vaccine_id])
-  farm    Farm?   @relation(fields: [farm_id], references: [farm_id])
-  animal  Animal? @relation(fields: [animal_id], references: [animal_id])
+  vaccine      Vaccine          @relation(fields: [vaccine_id], references: [vaccine_id])
+  farm         Farm?            @relation(fields: [farm_id], references: [farm_id])
+  animal       Animal?          @relation(fields: [animal_id], references: [animal_id])
+  doctor       User?            @relation("ScheduleDoctor", fields: [doctor_id], references: [user_id])
+  delegations  TaskDelegation[]
 }
 
 model Alert {
@@ -132,6 +147,7 @@ model Alert {
   user_id     Int      // reported_by
   symptoms    String
   status      String   @default("Pending")
+  escalated   Boolean  @default(false)
   created_at  DateTime @default(now())
 
   animal Animal @relation(fields: [animal_id], references: [animal_id])
@@ -207,6 +223,7 @@ model RoutineVaccinationRecord {
   vaccine           Vaccine                    @relation(fields: [vaccine_id], references: [vaccine_id])
   administered_user User                       @relation("RoutineVaccinationAdmin", fields: [administered_by], references: [user_id])
   stock             VaccineStock               @relation(fields: [stock_id], references: [stock_id])
+  mortalityRecords  MortalityRecord[]
 }
 
 // ─────────────────────────────────────────────────
@@ -224,4 +241,44 @@ model ActivityLog {
   user_role   String?
   ip_address  String?
   created_at  DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// MORTALITY TRACKING MODEL
+// ─────────────────────────────────────────────────
+
+model MortalityRecord {
+  id                Int      @id @default(autoincrement())
+  animal_id         Int      @unique
+  vaccination_id    Int?     // Haddii dhimashadu xiriir la leedahay tallaal caadi ah
+  routine_record_id Int?     // Haddii dhimashadu xiriir la leedahay tallaal xilliyeed
+  death_date        DateTime
+  cause_of_death    String   // Sababta (Tusaale: "Vaccine Reaction", "Illness")
+  notes             String?  // Faahfaahin dheeraad ah
+  reported_by       Int
+  created_at        DateTime @default(now())
+
+  animal            Animal                     @relation(fields: [animal_id], references: [animal_id])
+  vaccination       Vaccination?               @relation(fields: [vaccination_id], references: [vaccination_id])
+  routineRecord     RoutineVaccinationRecord?  @relation(fields: [routine_record_id], references: [id])
+  user              User                       @relation(fields: [reported_by], references: [user_id])
+}
+
+// ─────────────────────────────────────────────────
+// TASK DELEGATION MODEL
+// ─────────────────────────────────────────────────
+
+model TaskDelegation {
+  id            Int       @id @default(autoincrement())
+  schedule_id   Int
+  from_user_id  Int
+  to_user_id    Int?
+  reason        String
+  status        String    @default("Pending") // Pending | Accepted | Rejected
+  created_at    DateTime  @default(now())
+  responded_at  DateTime?
+
+  schedule   VaccinationSchedule @relation(fields: [schedule_id], references: [schedule_id])
+  from_user  User                @relation("DelegationFrom", fields: [from_user_id], references: [user_id])
+  to_user    User?               @relation("DelegationTo", fields: [to_user_id], references: [user_id])
 }

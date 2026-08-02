@@ -5,7 +5,9 @@ const { logActivity } = require('./activityLogController');
 const getStocks = async (req, res) => {
   try {
     const stocks = await prisma.vaccineStock.findMany({
+      where: { is_archived: false },
       include: { vaccine: true },
+      orderBy: { created_at: 'desc' },
     });
     res.json(stocks);
   } catch (error) {
@@ -69,14 +71,51 @@ const updateStock = async (req, res) => {
 const deleteStock = async (req, res) => {
   const { id } = req.params;
   try {
-    await prisma.vaccineStock.delete({ where: { stock_id: parseInt(id) } });
+    const stockId = parseInt(id);
+    const stock = await prisma.vaccineStock.findUnique({ where: { stock_id: stockId } });
+    if (!stock) {
+      return res.status(404).json({ error: 'Stock not found.' });
+    }
+
+    const [vaccCount, routineCount] = await Promise.all([
+      prisma.vaccination.count({ where: { stock_id: stockId } }),
+      prisma.routineVaccinationRecord.count({ where: { stock_id: stockId } }),
+    ]);
+
+    // Used in history → archive (hide from inventory) so vaccination history stays valid
+    if (vaccCount > 0 || routineCount > 0) {
+      await prisma.vaccineStock.update({
+        where: { stock_id: stockId },
+        data: { is_archived: true },
+      });
+      await logActivity({
+        action: 'DELETE',
+        entity: 'Stock',
+        entity_id: stockId,
+        description: `Archived stock #${stockId} (used in ${vaccCount + routineCount} vaccination record(s))`,
+        user_id: req.user?.userId,
+        user_name: req.user?.name,
+        user_role: req.user?.role,
+      });
+      return res.json({
+        archived: true,
+        message: 'Stock removed from inventory. Vaccination history was kept.',
+      });
+    }
+
+    await prisma.vaccineStock.delete({ where: { stock_id: stockId } });
     await logActivity({
-      action: 'DELETE', entity: 'Stock', entity_id: parseInt(id),
-      description: `Deleted stock #${id}`,
-      user_id: req.user?.userId, user_name: req.user?.name, user_role: req.user?.role,
+      action: 'DELETE',
+      entity: 'Stock',
+      entity_id: stockId,
+      description: `Deleted stock #${stockId}`,
+      user_id: req.user?.userId,
+      user_name: req.user?.name,
+      user_role: req.user?.role,
     });
-    res.status(204).send();
+    res.json({ archived: false, message: 'Stock deleted successfully.' });
   } catch (error) {
+    console.error('deleteStock error:', error);
     res.status(400).json({ error: error.message });
   }
 };

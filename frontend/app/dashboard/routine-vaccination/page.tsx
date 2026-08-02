@@ -8,10 +8,74 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import {
   CalendarIcon, SyringeIcon, PlusIcon, PlayIcon, CheckCircleIcon,
   ClockIcon, RefreshCwIcon, TrashIcon, PencilIcon, PowerIcon,
-  ChevronRightIcon, AlertCircleIcon, LayersIcon
+  ChevronRightIcon, AlertCircleIcon, LayersIcon, SearchIcon,
+  XIcon, PackageIcon, InfoIcon, AlertTriangleIcon
 } from "lucide-react"
 
+import Swal from "sweetalert2"
+import { toast } from "sonner"
+
 const API = "http://localhost:9999"
+
+/** Local calendar date as YYYY-MM-DD (avoids UTC off-by-one) */
+function todayLocalYmd() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+/** Usable stock: matching vaccine (+ Camel CML-P / Camel-Pox alias), qty, not expired/archived */
+function isUsableStock(s: any, vaccineId?: number, animalType?: string) {
+  if (!vaccineId) return false
+  const stockVid = Number(s.vaccine_id)
+  const needed = Number(vaccineId)
+  const camelVaccineIds = new Set([3, 8]) // CML-P and Camel-Pox (duplicate catalog entries)
+  const vaccineOk =
+    stockVid === needed ||
+    (animalType === "Camel" && camelVaccineIds.has(needed) && camelVaccineIds.has(stockVid))
+  if (!vaccineOk) return false
+  if (!(Number(s.quantity_remaining) > 0)) return false
+  if (s.is_archived) return false
+  if (!s.expiry_date) return false
+  const expiry = new Date(s.expiry_date)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  expiry.setHours(0, 0, 0, 0)
+  return expiry >= today
+}
+function alertBox(
+  title: string,
+  text: string,
+  icon: "warning" | "error" | "success" | "info" = "info"
+) {
+  return Swal.fire({
+    title,
+    text,
+    icon,
+    confirmButtonText: "OK",
+    confirmButtonColor: "#059669",
+    heightAuto: false,
+    allowOutsideClick: true,
+    returnFocus: false,
+    backdrop: true,
+    didOpen: () => {
+      const container = Swal.getContainer()
+      if (container) {
+        container.style.zIndex = "100000"
+        // Prevent Radix dialog overlay from blocking clicks
+        container.style.pointerEvents = "auto"
+      }
+      const overlay = document.querySelector('[data-slot="dialog-overlay"]') as HTMLElement | null
+      if (overlay) overlay.style.pointerEvents = "none"
+    },
+    willClose: () => {
+      const overlay = document.querySelector('[data-slot="dialog-overlay"]') as HTMLElement | null
+      if (overlay) overlay.style.pointerEvents = ""
+    },
+  })
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Vaccine { vaccine_id: number; vaccine_name: string }
@@ -181,10 +245,11 @@ export default function RoutineVaccinationPage() {
   // Forms
   const [tForm, setTForm] = useState({ campaign_name: '', animal_type: 'Goat', vaccine_id: '', frequency_months: '12', reminder_days_before: '30', start_date: '' })
   const [schedDate, setSchedDate] = useState('')
-  const [completeForm, setCompleteForm] = useState({ stock_id: '', administered_by: '', date_administered: new Date().toISOString().split('T')[0], dosage_ml: '1' })
+  const [completeForm, setCompleteForm] = useState({ stock_id: '', administered_by: '', date_administered: todayLocalYmd(), dosage_ml: '1' })
   const [stocks, setStocks] = useState<any[]>([])
   const [completeDetails, setCompleteDetails] = useState<CampaignDetails | null>(null)
   const [selectedAnimalIds, setSelectedAnimalIds] = useState<number[]>([])
+  const [animalSearch, setAnimalSearch] = useState('')
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : ''
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
@@ -261,7 +326,7 @@ export default function RoutineVaccinationPage() {
     const method = editingTemplate ? 'PUT' : 'POST'
     const res = await fetch(url, { method, headers, body: JSON.stringify(tForm) })
     if (res.ok) { setTemplateDialog(false); fetchTemplates() }
-    else alert((await res.json()).error)
+    else alertBox('Error', (await res.json()).error || 'Failed to save template.', 'error')
   }
 
   const toggleStatus = async (t: Template) => {
@@ -275,7 +340,7 @@ export default function RoutineVaccinationPage() {
     const res = await fetch(`${API}/api/routine-templates/${id}`, { method: 'DELETE', headers })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.error || 'Failed to delete template.')
+      alertBox('Error', data.error || 'Failed to delete template.', 'error')
       return
     }
     fetchTemplates()
@@ -284,7 +349,7 @@ export default function RoutineVaccinationPage() {
   const triggerCheck = async () => {
     const res = await fetch(`${API}/api/routine-campaigns/trigger-check`, { method: 'POST', headers })
     const data = await res.json()
-    alert(data.message || data.error)
+    alertBox(data.error ? 'Error' : 'Success', data.message || data.error || '', data.error ? 'error' : 'success')
     fetchCampaigns()
   }
 
@@ -296,24 +361,32 @@ export default function RoutineVaccinationPage() {
       method: 'PATCH', headers, body: JSON.stringify({ scheduled_date: schedDate, doctor_id: userId })
     })
     if (res.ok) { setScheduleDialog(false); fetchCampaigns() }
-    else alert((await res.json()).error)
+    else alertBox('Error', (await res.json()).error || 'Failed to schedule.', 'error')
   }
 
   const startCampaign = async (c: Campaign) => {
     const res = await fetch(`${API}/api/routine-campaigns/${c.id}/start`, { method: 'PATCH', headers })
     if (res.ok) fetchCampaigns()
-    else alert((await res.json()).error)
+    else alertBox('Error', (await res.json()).error || 'Failed to start campaign.', 'error')
   }
 
   const openComplete = async (c: Campaign) => {
     setSelectedCampaign(c)
-    setCompleteForm({ stock_id: '', administered_by: String(userId || ''), date_administered: new Date().toISOString().split('T')[0], dosage_ml: '1' })
+    setCompleteForm({ stock_id: '', administered_by: String(userId || ''), date_administered: todayLocalYmd(), dosage_ml: '1' })
     setCompleteDetails(null)
     setSelectedAnimalIds([])
+    setAnimalSearch('')
     await fetchStocks()
     const res = await fetch(`${API}/api/routine-campaigns/${c.id}`, { headers })
     if (res.ok) {
       const data: CampaignDetails = await res.json()
+      // Always use fresh campaign (vaccine_id) from API — list card can be stale
+      setSelectedCampaign({
+        ...c,
+        ...data,
+        vaccine_id: data.vaccine_id,
+        vaccine: data.vaccine,
+      })
       setCompleteDetails(data)
       const unvaccinatedIds = data.animals
         .filter(a => !data.vaccinated_animal_ids.includes(a.animal_id))
@@ -335,13 +408,29 @@ export default function RoutineVaccinationPage() {
 
   const submitComplete = async () => {
     if (!selectedCampaign) return
-    if (!completeForm.stock_id) { alert('Fadlan dooro Vaccine Stock.'); return }
-    if (!completeForm.administered_by) { alert('User-ka lama aqoonsan. Fadlan dib u gal (re-login).'); return }
-    if (selectedAnimalIds.length === 1 && (!completeForm.dosage_ml || Number(completeForm.dosage_ml) <= 0)) {
-      alert('Please enter a valid dosage for single-animal vaccination.')
+    // Use toast while dialog is open (SweetAlert OK is blocked by dialog focus trap)
+    if (!completeForm.stock_id) {
+      toast.warning('Please select a Vaccine Stock.')
       return
     }
-    if (selectedAnimalIds.length === 0) { alert('Please select at least one animal.'); return }
+    if (!completeForm.administered_by) {
+      toast.warning('User not recognized. Please log in again.')
+      return
+    }
+    if (selectedAnimalIds.length === 1 && (!completeForm.dosage_ml || Number(completeForm.dosage_ml) <= 0)) {
+      toast.warning('Please enter a valid dosage for single-animal vaccination.')
+      return
+    }
+    if (selectedAnimalIds.length === 0) {
+      toast.warning('Please select at least one animal.')
+      return
+    }
+    const today = todayLocalYmd()
+    if (!completeForm.date_administered || completeForm.date_administered !== today) {
+      toast.warning('Date Administered must be today only. Past and future dates are not allowed.')
+      setCompleteForm((prev) => ({ ...prev, date_administered: today }))
+      return
+    }
     const res = await fetch(`${API}/api/routine-campaigns/${selectedCampaign.id}/complete`, {
       method: 'POST',
       headers,
@@ -351,15 +440,20 @@ export default function RoutineVaccinationPage() {
       const data = await res.json()
       setCompleteDialog(false)
       fetchCampaigns()
-      alert(data.message || 'Vaccination saved.')
+      toast.success(data.message || 'Vaccination saved successfully.')
+    } else {
+      const err = await res.json().catch(() => ({}))
+      toast.error(err.error || 'Failed to complete vaccination.')
     }
-    else alert((await res.json()).error)
   }
 
   // ── Filter campaigns by role/tab ───────────────────────────────────────────
   const upcomingCampaigns = campaigns.filter(c => ['Upcoming', 'Scheduled', 'InProgress'].includes(c.status))
   const completedCampaigns = campaigns.filter(c => c.status === 'Completed')
   const isBulkSelection = selectedAnimalIds.length > 1
+  const usableStocks = stocks.filter((s: any) =>
+    isUsableStock(s, selectedCampaign?.vaccine_id, selectedCampaign?.animal_type)
+  )
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = [
@@ -377,7 +471,7 @@ export default function RoutineVaccinationPage() {
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <SyringeIcon className="w-6 h-6 text-blue-600" /> Routine Vaccination
           </h1>
-          <p className="text-slate-500 text-sm mt-1">Maamulka tallaalka joogtada ah – Animals, Campaigns, Jadwalka</p>
+          <p className="text-slate-500 text-sm mt-1">Manage recurring vaccination templates, campaigns, and schedules</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={fetchCampaigns} variant="outline" size="sm" className="rounded-xl text-blue-600 border-blue-200 hover:bg-blue-50">
@@ -597,64 +691,127 @@ export default function RoutineVaccinationPage() {
 
       {/* ── Dialog: Complete Campaign ───────────────────────────────────────── */}
       <Dialog open={completeDialog} onOpenChange={setCompleteDialog}>
-        <DialogContent className="w-[95vw] max-w-4xl rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-extrabold flex items-center gap-2">
-              <CheckCircleIcon className="w-5 h-5 text-teal-600" /> Complete Vaccination
+        <DialogContent className="!w-[min(880px,94vw)] !max-w-[880px] sm:!max-w-[880px] !h-[min(820px,88vh)] !max-h-[min(820px,88vh)] rounded-3xl border border-slate-100/80 shadow-[0_25px_80px_-20px_rgba(15,23,42,0.35)] !p-0 !gap-0 flex flex-col overflow-hidden bg-white">
+          <DialogHeader className="shrink-0 px-6 pt-5 pb-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50/80 to-white">
+            <DialogTitle className="text-lg font-extrabold text-slate-800 flex items-center gap-2.5">
+              <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-sm">
+                <CheckCircleIcon className="w-4 h-4" />
+              </span>
+              Complete Vaccination
             </DialogTitle>
           </DialogHeader>
-          <div className="py-2 grid lg:grid-cols-2 gap-4">
-            <div className="space-y-4">
-              <div className="bg-teal-50 rounded-xl p-3 text-sm text-teal-700">
-                <p className="font-bold">{selectedCampaign?.campaign_name}</p>
-                <p className="mt-1">Select specific <strong>{selectedCampaign?.animal_type}</strong> animals to vaccinate now. You can complete in batches.</p>
+
+          <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-5 min-h-0 flex-1 overflow-hidden">
+            {/* Left column — no scroll cut-off; compact so all fields show */}
+            <div className="space-y-3 min-h-0 overflow-y-auto pr-1">
+              <div className="bg-emerald-50 rounded-2xl p-3 text-emerald-800 flex gap-3 items-start">
+                <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center shrink-0 shadow-sm">
+                  <AnimalEmoji type={selectedCampaign?.animal_type || ''} />
+                </div>
+                <div>
+                  <p className="font-extrabold text-sm leading-tight">{selectedCampaign?.campaign_name}</p>
+                  <p className="mt-1 text-[11px] text-emerald-700/90 leading-relaxed">
+                    Select specific <strong>{selectedCampaign?.animal_type}</strong> animals to vaccinate now. You can complete in batches.
+                  </p>
+                </div>
               </div>
+
               <div>
-                <label className="text-xs font-bold text-slate-600 block mb-1">Dosage (ml)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none"
-                  value={isBulkSelection ? '1' : completeForm.dosage_ml}
-                  disabled={isBulkSelection}
-                  onChange={e => setCompleteForm({ ...completeForm, dosage_ml: e.target.value })}
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  {isBulkSelection
-                    ? 'Bulk selection active: system uses 1 dose for each selected animal.'
-                    : 'Single selection: doctor-defined dosage will be used.'}
+                <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                  Dosage (ml)
+                  <InfoIcon className="w-3.5 h-3.5 text-slate-400" />
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 pr-12 text-sm bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    value="1"
+                    disabled
+                    onChange={e => setCompleteForm({ ...completeForm, dosage_ml: e.target.value })}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">ml</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Fixed dose: system uses exactly 1 dose for each animal.
                 </p>
               </div>
+
               <div>
                 <label className="text-xs font-bold text-slate-600 block mb-1">Vaccine Stock</label>
-                <select className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none"
-                  value={completeForm.stock_id} onChange={e => setCompleteForm({ ...completeForm, stock_id: e.target.value })}>
-                  <option value="">-- Select Stock --</option>
-                  {stocks.map((s: any) => (
-                    <option key={s.stock_id} value={s.stock_id}>
-                      {s.vaccine?.vaccine_name} – Batch {s.batch_number || 'N/A'} ({s.quantity_remaining} remaining)
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <PackageIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <select
+                    className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200 appearance-none bg-white"
+                    value={completeForm.stock_id}
+                    onChange={e => setCompleteForm({ ...completeForm, stock_id: e.target.value })}
+                  >
+                    <option value="">-- Select Stock --</option>
+                    {usableStocks.map((s: any) => (
+                      <option key={s.stock_id} value={s.stock_id}>
+                        {s.vaccine?.vaccine_name} – Batch {s.batch_number || 'N/A'} ({s.quantity_remaining} remaining)
+                      </option>
+                    ))}
+                    {usableStocks.length === 0 && (
+                      <option disabled value="">No usable stock available</option>
+                    )}
+                  </select>
+                </div>
+                {usableStocks.length === 0 && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-start gap-1.5">
+                    <AlertTriangleIcon className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>
+                      No usable (non-expired) stock found for{" "}
+                      <strong>{selectedCampaign?.vaccine?.vaccine_name}</strong>.
+                      Inventory stock must be registered under this same vaccine name
+                      (not a different camel vaccine). Add/check it in Inventory (Stock).
+                    </span>
+                  </p>
+                )}
               </div>
+
               <div>
                 <label className="text-xs font-bold text-slate-600 block mb-1">Date Administered</label>
-                <input type="date" className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none"
-                  value={completeForm.date_administered} onChange={e => setCompleteForm({ ...completeForm, date_administered: e.target.value })} />
+                <div className="relative">
+                  <CalendarIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="date"
+                    min={todayLocalYmd()}
+                    max={todayLocalYmd()}
+                    className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    value={completeForm.date_administered}
+                    onChange={e => {
+                      const today = todayLocalYmd()
+                      const next = e.target.value
+                      if (next && next !== today) {
+                        toast.warning('Only today is allowed. Past and future dates cannot be selected.')
+                        setCompleteForm({ ...completeForm, date_administered: today })
+                        return
+                      }
+                      setCompleteForm({ ...completeForm, date_administered: next || today })
+                    }}
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Today only — past and future dates are blocked.
+                </p>
               </div>
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 flex gap-2">
-                <AlertCircleIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                Stock will be reduced only for selected animals vaccinated in this batch.
+
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-2.5 text-xs text-amber-800 flex gap-2">
+                <InfoIcon className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+                <span>Stock will be reduced only for selected animals vaccinated in this batch.</span>
               </div>
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-600">Select Animals</label>
-                <div className="flex gap-2">
+
+            {/* Right column */}
+            <div className="space-y-2 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex items-center justify-between shrink-0">
+                <label className="text-sm font-extrabold text-slate-700">Select Animals</label>
+                <div className="flex gap-3">
                   <button
                     type="button"
-                    className="text-[11px] font-semibold text-blue-600 hover:underline"
+                    className="text-[12px] font-semibold text-blue-600 hover:underline"
                     onClick={() => {
                       const ids = (completeDetails?.animals || [])
                         .filter(a => !completeDetails?.vaccinated_animal_ids.includes(a.animal_id))
@@ -666,46 +823,90 @@ export default function RoutineVaccinationPage() {
                   </button>
                   <button
                     type="button"
-                    className="text-[11px] font-semibold text-slate-500 hover:underline"
+                    className="text-[12px] font-semibold text-slate-500 hover:underline"
                     onClick={() => setSelectedAnimalIds([])}
                   >
                     Clear
                   </button>
                 </div>
               </div>
-              <div className="h-64 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1">
-                {(completeDetails?.animals || []).map(a => {
-                  const alreadyVaccinated = completeDetails?.vaccinated_animal_ids.includes(a.animal_id)
-                  const checked = selectedAnimalIds.includes(a.animal_id)
-                  return (
-                    <label key={a.animal_id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs ${alreadyVaccinated ? 'bg-slate-50 text-slate-400' : 'hover:bg-slate-50 cursor-pointer'}`}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={alreadyVaccinated}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedAnimalIds(prev => Array.from(new Set([...prev, a.animal_id])))
-                          else setSelectedAnimalIds(prev => prev.filter(id => id !== a.animal_id))
-                        }}
-                      />
-                      <span className="font-semibold">#{a.animal_id}</span>
-                      <span>{a.nickname || 'Unnamed'}</span>
-                      <span className="text-slate-400">· {a.farm?.farm_name || 'No farm'}</span>
-                      {alreadyVaccinated && <span className="ml-auto text-[10px]">already vaccinated</span>}
-                    </label>
-                  )
-                })}
+
+              <div className="relative shrink-0">
+                <SearchIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search animals..."
+                  value={animalSearch}
+                  onChange={e => setAnimalSearch(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                />
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto border border-slate-200 rounded-2xl bg-white divide-y divide-slate-50">
+                {(completeDetails?.animals || [])
+                  .filter(a => {
+                    const q = animalSearch.trim().toLowerCase()
+                    if (!q) return true
+                    return (
+                      String(a.animal_id).includes(q) ||
+                      (a.nickname || '').toLowerCase().includes(q) ||
+                      (a.farm?.farm_name || '').toLowerCase().includes(q)
+                    )
+                  })
+                  .map(a => {
+                    const alreadyVaccinated = completeDetails?.vaccinated_animal_ids.includes(a.animal_id)
+                    const checked = selectedAnimalIds.includes(a.animal_id)
+                    return (
+                      <label
+                        key={a.animal_id}
+                        className={`flex items-center gap-3 px-3 py-2 text-sm ${
+                          alreadyVaccinated
+                            ? 'bg-slate-50 text-slate-400'
+                            : 'hover:bg-slate-50 cursor-pointer'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 accent-emerald-600 rounded"
+                          checked={checked}
+                          disabled={alreadyVaccinated}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedAnimalIds(prev => Array.from(new Set([...prev, a.animal_id])))
+                            else setSelectedAnimalIds(prev => prev.filter(id => id !== a.animal_id))
+                          }}
+                        />
+                        <span className="font-bold text-slate-700 shrink-0">#{a.animal_id}</span>
+                        <span className="text-slate-700 truncate">{a.nickname || 'Unnamed'}</span>
+                        <span className="ml-auto text-xs text-slate-400 truncate max-w-[40%] text-right">
+                          {alreadyVaccinated ? 'already vaccinated' : (a.farm?.farm_name || 'No farm')}
+                        </span>
+                      </label>
+                    )
+                  })}
                 {(completeDetails?.animals || []).length === 0 && (
-                  <div className="text-xs text-slate-400 text-center py-3">No animals found.</div>
+                  <div className="text-xs text-slate-400 text-center py-10">No animals found.</div>
                 )}
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">Selected: <span className="font-bold">{selectedAnimalIds.length}</span></p>
+
+              <p className="text-xs font-semibold text-blue-600 shrink-0">
+                Selected: {selectedAnimalIds.length} animal{selectedAnimalIds.length === 1 ? '' : 's'}
+              </p>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCompleteDialog(false)} className="rounded-xl">Cancel</Button>
-            <Button onClick={submitComplete} className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl">
-              <CheckCircleIcon className="w-4 h-4 mr-1" /> Complete Campaign
+
+          <DialogFooter className="!mx-0 !mb-0 shrink-0 px-6 py-4 rounded-b-3xl border-t border-slate-100 bg-slate-50/60 gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setCompleteDialog(false)}
+              className="rounded-xl border-slate-200 text-slate-600 hover:bg-white"
+            >
+              <XIcon className="w-4 h-4 mr-1.5" /> Cancel
+            </Button>
+            <Button
+              onClick={submitComplete}
+              className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+            >
+              <CheckCircleIcon className="w-4 h-4 mr-1.5" /> Complete Campaign
             </Button>
           </DialogFooter>
         </DialogContent>

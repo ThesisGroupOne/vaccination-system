@@ -7,6 +7,15 @@ function dayKey(dateValue) {
   return new Date(dateValue).toISOString().slice(0, 10);
 }
 
+/** Local calendar YYYY-MM-DD (server local timezone) */
+function todayLocalYmd() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function addMonths(date, months) {
@@ -158,6 +167,17 @@ const completeCampaign = async (req, res) => {
 
     if (!stockId || !administeredBy || Number.isNaN(administered.getTime())) {
       return res.status(400).json({ error: 'stock_id, administered_by and valid date_administered are required.' });
+    }
+
+    // Date Administered: today only (no past, no future)
+    const clientYmd =
+      typeof date_administered === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date_administered)
+        ? date_administered.slice(0, 10)
+        : todayLocalYmd();
+    if (clientYmd !== todayLocalYmd()) {
+      return res.status(400).json({
+        error: 'Date Administered must be today only. Past and future dates are not allowed.',
+      });
     }
 
     const campaign = await prisma.routineVaccinationCampaign.findUnique({

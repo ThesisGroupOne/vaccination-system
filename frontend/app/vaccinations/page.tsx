@@ -41,6 +41,9 @@ export default function VaccinationsPage() {
     date_administered: ''
   });
 
+  const [animals, setAnimals] = useState<any[]>([]);
+  const [allVaccines, setAllVaccines] = useState<any[]>([]);
+
   const fetchVaccinations = async () => {
     setIsLoading(true);
     try {
@@ -61,9 +64,31 @@ export default function VaccinationsPage() {
     }
   };
 
+  const fetchRelatedData = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const [animRes, vaccRes] = await Promise.all([
+        fetch('http://localhost:9999/api/animals', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('http://localhost:9999/api/vaccines', { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
+      
+      if (animRes.ok) setAnimals(await animRes.json());
+      if (vaccRes.ok) setAllVaccines(await vaccRes.json());
+    } catch (error) {
+      console.error("Failed to fetch related data", error);
+    }
+  }
+
   useEffect(() => {
     fetchVaccinations();
+    fetchRelatedData();
   }, []);
+
+  const selectedAnimal = animals.find(a => a.animal_id.toString() === formData.animal_id);
+  const availableVaccines = allVaccines.filter(v => {
+    if (!selectedAnimal) return true; // Show all if no animal selected
+    return v.target_animal === selectedAnimal.animal_type;
+  });
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,12 +164,22 @@ export default function VaccinationsPage() {
                 </DialogHeader>
                 <div className="grid gap-5">
                   <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="animal_id" className="text-right text-sm font-medium text-muted-foreground">Animal ID</Label>
-                    <Input id="animal_id" type="number" required value={formData.animal_id} onChange={e => setFormData({ ...formData, animal_id: e.target.value })} placeholder="e.g. 101" className="col-span-3 rounded-lg bg-muted/20 border-muted-foreground/20 focus-visible:ring-primary/30" />
+                    <Label htmlFor="animal_id" className="text-right text-sm font-medium text-muted-foreground">Animal</Label>
+                    <select id="animal_id" required value={formData.animal_id} onChange={e => setFormData({ ...formData, animal_id: e.target.value, vaccine_id: '' })} className="col-span-3 rounded-lg h-10 px-3 bg-muted/20 border border-muted-foreground/20 focus-visible:ring-primary/30 outline-none">
+                      <option value="">Select Animal...</option>
+                      {animals.map(a => (
+                        <option key={a.animal_id} value={a.animal_id}>#{a.animal_id} - {a.nickname || 'Unnamed'} ({a.animal_type})</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="vaccine_id" className="text-right text-sm font-medium text-muted-foreground">Vaccine ID</Label>
-                    <Input id="vaccine_id" type="number" required value={formData.vaccine_id} onChange={e => setFormData({ ...formData, vaccine_id: e.target.value })} placeholder="e.g. 5" className="col-span-3 rounded-lg bg-muted/20 border-muted-foreground/20 focus-visible:ring-primary/30" />
+                    <Label htmlFor="vaccine_id" className="text-right text-sm font-medium text-muted-foreground">Vaccine</Label>
+                    <select id="vaccine_id" required value={formData.vaccine_id} onChange={e => setFormData({ ...formData, vaccine_id: e.target.value })} className="col-span-3 rounded-lg h-10 px-3 bg-muted/20 border border-muted-foreground/20 focus-visible:ring-primary/30 outline-none">
+                      <option value="">Select Vaccine...</option>
+                      {availableVaccines.map(v => (
+                        <option key={v.vaccine_id} value={v.vaccine_id}>{v.vaccine_name} ({v.target_animal})</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="stock_id" className="text-right text-sm font-medium text-muted-foreground">Stock Batch ID</Label>

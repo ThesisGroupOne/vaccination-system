@@ -180,14 +180,16 @@ export default function StockTable() {
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${token}` }
           });
+          const data = await res.json().catch(() => ({}));
           if (res.ok) {
-              toast.success("Stock deleted successfully");
+              toast.success(data.message || "Stock deleted successfully");
               fetchStocks();
           } else {
-              toast.error("Failed to delete stock");
+              toast.error(data.error || "Failed to delete stock");
           }
       } catch (error) {
           console.error(error);
+          toast.error("Network error while deleting stock");
       }
   };
 

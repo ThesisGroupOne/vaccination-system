@@ -18,7 +18,10 @@ import {
   ShieldCheckIcon,
   MoreVerticalIcon,
   UserIcon,
-  CalendarIcon
+  CalendarIcon,
+  BellIcon,
+  ClipboardListIcon,
+  ArrowRightLeftIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { canView } from '@/lib/permissions';
@@ -64,10 +67,18 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         ...(canView('Farms', role) ? [{ href: '/dashboard/farms', label: 'Farms', icon: WarehouseIcon }] : []),
         ...(canView('Animals', role) ? [{ href: '/dashboard/animals', label: 'Animals Registration', icon: LayersIcon }] : []),
         ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccines', label: 'Vaccines', icon: SyringeIcon }] : []),
+        ...(canView('VaccineRequests', role) ? [{ href: '/dashboard/vaccine-requests', label: 'Vaccine Requests', icon: ClipboardListIcon }] : []),
         ...(canView('Stock', role) ? [{ href: '/dashboard/stock', label: 'Inventory (Stock)', icon: PackageIcon }] : []),
         { href: '/dashboard/routine-vaccination', label: 'Routine Vaccination', icon: CalendarIcon },
         ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccination-list', label: 'Vaccination List', icon: FileTextIcon }] : []),
         ...(canView('Reports', role) ? [{ href: '/dashboard/reports', label: 'Reports', icon: PieChartIcon }] : []),
+        { href: '/dashboard/delegations', label: 'Delegate Tasks', icon: ArrowRightLeftIcon },
+      ]
+    },
+    {
+      label: 'Notifications',
+      items: [
+        { href: '/dashboard/notifications', label: 'Notifications & Alerts', icon: BellIcon },
       ]
     },
     ...(role === 'Admin' ? [
@@ -75,13 +86,14 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         label: 'Access Control',
         items: [
           { href: '/dashboard/users', label: 'Users', icon: UsersIcon },
+          { href: '/dashboard/roles', label: 'Roles & Permissions', icon: ShieldCheckIcon },
         ]
       }
     ] : []),
-    ...(role === 'Admin' || role === 'Doctor' ? [{
+    ...((canView('Settings', role) || canView('ActivityLogs', role)) ? [{
       label: 'System',
       items: [
-        { href: '/dashboard/settings', label: 'Settings', icon: SettingsIcon },
+        ...(canView('Settings', role) ? [{ href: '/dashboard/settings', label: 'Settings', icon: SettingsIcon }] : []),
         ...(canView('ActivityLogs', role) ? [{ href: '/dashboard/activity-logs', label: 'Activity Logs', icon: ActivityIcon }] : []),
       ]
     }] : [])

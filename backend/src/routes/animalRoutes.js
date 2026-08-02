@@ -1,5 +1,5 @@
 const express = require('express');
-const { getAnimals, createAnimal, updateAnimal, deleteAnimal, generateAnimalIDCard, updateAnimalStatus } = require('../controllers/animalController');
+const { getAnimals, createAnimal, updateAnimal, deleteAnimal, generateAnimalIDCard, updateAnimalStatus, reportMortality } = require('../controllers/animalController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
 
@@ -11,5 +11,6 @@ router.put('/:id', authMiddleware, roleMiddleware(['Doctor']), updateAnimal);
 router.delete('/:id', authMiddleware, roleMiddleware(['Doctor']), deleteAnimal);
 router.patch('/:id/status', authMiddleware, roleMiddleware(['Doctor']), updateAnimalStatus);
 router.get('/:id/id-card', authMiddleware, generateAnimalIDCard);
+router.post('/:id/report-death', authMiddleware, roleMiddleware(['Doctor']), reportMortality);
 
 module.exports = router;

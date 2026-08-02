@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2Icon, SyringeIcon, CalendarIcon, AlertCircleIcon } from 'lucide-react';
+import { Loader2Icon, SyringeIcon, CalendarIcon, AlertCircleIcon, ArrowRightLeftIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import DelegateTaskModal from '@/components/DelegateTaskModal';
+
 
 interface Schedule {
     schedule_id: number;
@@ -16,8 +18,10 @@ interface Schedule {
     animal_id: number;
     scheduled_date: string;
     status: string;
+    doctor_id?: number | null;
     animal?: { animal_id: number; nickname?: string; status: string; is_pregnant: boolean; biological_type: string };
     vaccine?: { vaccine_name: string };
+    doctor?: { user_id: number; full_name: string };
 }
 
 export default function DoctorQueue() {
@@ -30,6 +34,11 @@ export default function DoctorQueue() {
     const [stockId, setStockId] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [availableStocks, setAvailableStocks] = useState<any[]>([]);
+
+    // Delegation state
+    const [isDelegateModalOpen, setIsDelegateModalOpen] = useState(false);
+    const [delegatingSchedule, setDelegatingSchedule] = useState<Schedule | null>(null);
+
 
     const fetchSchedules = async () => {
         setIsLoading(true);
@@ -75,7 +84,7 @@ export default function DoctorQueue() {
 
     const openVaccinateModal = async (schedule: Schedule) => {
         setSelectedSchedule(schedule);
-        setDosage('');
+        setDosage('1');
         setStockId('');
         setIsVaccinateModalOpen(true);
         
@@ -196,20 +205,27 @@ export default function DoctorQueue() {
                                             <CalendarIcon className="h-3.5 w-3.5 text-indigo-500" />
                                             {new Date(schedule.scheduled_date).toLocaleString()}
                                         </div>
+                                        {schedule.doctor?.full_name && (
+                                            <p className="text-[10px] font-semibold text-emerald-700">
+                                                Assigned to: {schedule.doctor.full_name}
+                                            </p>
+                                        )}
                                     </div>
-                                    <div>
+                                    <div className="flex gap-2">
                                         {schedule.status === 'Completed' ? (
                                             <Button size="sm" variant="outline" disabled className="rounded-lg bg-emerald-50 border-emerald-200 text-emerald-700 font-semibold h-9 px-4 text-xs">
                                                 Completed
                                             </Button>
                                         ) : canVaccinate ? (
-                                            <Button
-                                                size="sm"
-                                                className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-semibold h-9 px-4 text-xs"
-                                                onClick={() => openVaccinateModal(schedule)}
-                                            >
-                                                Vaccinate Now
-                                            </Button>
+                                            <>
+                                                <Button
+                                                    size="sm"
+                                                    className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-semibold h-9 px-4 text-xs"
+                                                    onClick={() => openVaccinateModal(schedule)}
+                                                >
+                                                    Vaccinate Now
+                                                </Button>
+                                            </>
                                         ) : (
                                             <Button size="sm" variant="outline" disabled className="rounded-lg font-semibold h-9 px-4 text-xs">
                                                 Unavailable
@@ -267,7 +283,7 @@ export default function DoctorQueue() {
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
                                 <Label htmlFor="dosage" className="text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Dosage (ml)</Label>
-                                <Input id="dosage" type="number" step="0.1" required className="col-span-3 rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-indigo-500" value={dosage} onChange={(e) => setDosage(e.target.value)} placeholder="e.g. 2.5" />
+                                <Input id="dosage" type="number" disabled className="col-span-3 rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-indigo-500 text-slate-500" value="1" />
                             </div>
                         </div>
                         <DialogFooter className="mt-6 gap-3">
@@ -280,6 +296,14 @@ export default function DoctorQueue() {
                     </form>
                 </DialogContent>
             </Dialog>
+
+            {/* Delegate Task Modal */}
+            <DelegateTaskModal
+                open={isDelegateModalOpen}
+                onClose={() => { setIsDelegateModalOpen(false); setDelegatingSchedule(null); }}
+                schedule={delegatingSchedule}
+                onSuccess={fetchSchedules}
+            />
         </Card>
     );
 }

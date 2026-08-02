@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { startRoutineVaccinationCron } = require('./src/services/routineVaccinationCron');
+const { startAlertEscalationCron } = require('./src/services/alertEscalationCron');
 
 const path = require('path');
 dotenv.config();
@@ -10,7 +11,11 @@ const app = express();
 const PORT = process.env.PORT || 9999;
 
 // Middleware
-app.use(cors({ origin: 'http://localhost:3000', credentials: true, allowedHeaders: ['Content-Type', 'Authorization'] }));
+app.use(cors({ 
+  origin: ['http://localhost:3000', 'http://localhost:3001'], 
+  credentials: true, 
+  allowedHeaders: ['Content-Type', 'Authorization'] 
+}));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -32,6 +37,9 @@ const routineTemplateRoutes = require('./src/routes/routineTemplateRoutes');
 const routineCampaignRoutes = require('./src/routes/routineCampaignRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 const activityLogRoutes = require('./src/routes/activityLogRoutes');
+const notificationRoutes = require('./src/routes/notificationRoutes');
+const delegationRoutes = require('./src/routes/delegationRoutes');
+
 
 app.use('/api/auth', authRoutes);
 app.use('/api/animals', animalRoutes);
@@ -50,9 +58,15 @@ app.use('/api/routine-templates', routineTemplateRoutes);
 app.use('/api/routine-campaigns', routineCampaignRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/delegations', delegationRoutes);
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   // Bilaab Routine Vaccination Cron
   startRoutineVaccinationCron();
+  
+  // Bilaab Emergency Alert Escalation Cron
+  startAlertEscalationCron();
 });

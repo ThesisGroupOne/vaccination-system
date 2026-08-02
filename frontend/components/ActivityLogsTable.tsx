@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { 
   ActivityIcon, SearchIcon, Loader2Icon, ChevronLeftIcon, ChevronRightIcon, 
   PlusCircleIcon, EditIcon, TrashIcon, LogInIcon, LogOutIcon, SyringeIcon, 
-  RefreshCwIcon, FilterIcon, BarChart3Icon, ClockIcon, UserIcon, LayersIcon
+  RefreshCwIcon, FilterIcon, BarChart3Icon, ClockIcon, UserIcon, LayersIcon, AlertCircleIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -42,6 +42,7 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   LOGOUT: <LogOutIcon className="w-4 h-4" />,
   VACCINATE: <SyringeIcon className="w-4 h-4" />,
   STATUS_CHANGE: <RefreshCwIcon className="w-4 h-4" />,
+  SLA_VIOLATION: <AlertCircleIcon className="w-4 h-4" />,
 };
 
 const ACTION_COLORS: Record<string, string> = {
@@ -52,6 +53,7 @@ const ACTION_COLORS: Record<string, string> = {
   LOGOUT: 'bg-slate-50 text-slate-500 border-slate-200',
   VACCINATE: 'bg-amber-50 text-amber-600 border-amber-200',
   STATUS_CHANGE: 'bg-cyan-50 text-cyan-600 border-cyan-200',
+  SLA_VIOLATION: 'bg-red-600 text-white border-red-700 shadow-md animate-pulse',
 };
 
 const ENTITY_COLORS: Record<string, string> = {
@@ -258,6 +260,7 @@ export default function ActivityLogsTable() {
                 <SelectItem value="LOGIN" className="rounded-lg m-1 text-xs font-medium">Login</SelectItem>
                 <SelectItem value="STATUS_CHANGE" className="rounded-lg m-1 text-xs font-medium">Status Change</SelectItem>
                 <SelectItem value="VACCINATE" className="rounded-lg m-1 text-xs font-medium">Vaccinate</SelectItem>
+                <SelectItem value="SLA_VIOLATION" className="rounded-lg m-1 text-xs font-medium text-red-600">SLA Violations</SelectItem>
               </SelectContent>
             </Select>
 

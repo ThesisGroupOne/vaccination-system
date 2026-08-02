@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { UsersIcon, PlusIcon, Loader2Icon, MailIcon, PhoneIcon, ShieldCheckIcon, EditIcon, TrashIcon, MoreHorizontalIcon } from 'lucide-react';
+import { UsersIcon, PlusIcon, Loader2Icon, MailIcon, PhoneIcon, ShieldCheckIcon, EditIcon, TrashIcon, MoreHorizontalIcon, BanIcon, CheckCircleIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { canEdit } from '@/lib/permissions';
 
@@ -20,6 +20,7 @@ interface User {
     email: string;
     phone?: string;
     role: string;
+    is_active?: boolean;
     created_at: string;
 }
 
@@ -140,6 +141,36 @@ export default function UserTable() {
             }
         } catch (error) {
             console.error(error);
+        }
+    };
+
+    const handleToggleLogin = async (user: User) => {
+        const nextActive = user.is_active === false;
+        const currentUserId = Number(localStorage.getItem('userId') || 0);
+        if (!nextActive && user.user_id === currentUserId) {
+            toast.error('You cannot disable your own login.');
+            return;
+        }
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`http://localhost:9999/api/users/${user.user_id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ is_active: nextActive })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                toast.success(nextActive ? `${user.full_name} can log in` : `${user.full_name} login disabled`);
+                fetchUsers();
+            } else {
+                toast.error(data.error || 'Failed to update login status');
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error('Network error');
         }
     };
 
@@ -292,6 +323,7 @@ export default function UserTable() {
                             <TableHead className="pl-6 h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest w-[250px]">User Details</TableHead>
                             <TableHead className="h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Contact</TableHead>
                             <TableHead className="h-11 text-center font-bold text-[10px] text-slate-400 uppercase tracking-widest">Role</TableHead>
+                            <TableHead className="h-11 text-center font-bold text-[10px] text-slate-400 uppercase tracking-widest">Login</TableHead>
                             <TableHead className="h-11 text-right font-bold text-[10px] text-slate-400 uppercase tracking-widest">Joined</TableHead>
                             <TableHead className="h-11 pr-6 text-right font-bold text-[10px] text-slate-400 uppercase tracking-widest w-[80px]">Actions</TableHead>
                         </TableRow>
@@ -299,7 +331,7 @@ export default function UserTable() {
                     <TableBody>
                         {isLoading ? (
                             <TableRow>
-                                <TableCell colSpan={5} className="h-32 text-center">
+                                <TableCell colSpan={6} className="h-32 text-center">
                                     <Loader2Icon className="h-6 w-6 animate-spin mx-auto text-[#2FA4D7] opacity-50" />
                                 </TableCell>
                             </TableRow>
@@ -343,6 +375,18 @@ export default function UserTable() {
                                             {u.role}
                                         </Badge>
                                     </TableCell>
+                                    <TableCell className="text-center py-3">
+                                        <Badge
+                                            variant="outline"
+                                            className={`rounded-full font-bold px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                                                u.is_active === false
+                                                    ? 'bg-rose-50 text-rose-600 border-rose-200'
+                                                    : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                            }`}
+                                        >
+                                            {u.is_active === false ? 'Blocked' : 'Active'}
+                                        </Badge>
+                                    </TableCell>
                                     <TableCell className="text-right py-3 text-slate-500 text-[10px] font-bold">
                                         {new Date(u.created_at).toLocaleDateString()}
                                     </TableCell>
@@ -354,11 +398,18 @@ export default function UserTable() {
                                                         <MoreHorizontalIcon className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-40 bg-white border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-xl">
+                                                <DropdownMenuContent align="end" className="w-48 bg-white border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-xl">
                                                     <DropdownMenuLabel className="text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</DropdownMenuLabel>
                                                     <DropdownMenuSeparator className="bg-slate-100" />
                                                     <DropdownMenuItem onClick={() => openEditModal(u)} className="text-sm font-medium text-slate-700 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg m-1">
                                                         <EditIcon className="mr-2 h-4 w-4" /> Edit User
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleToggleLogin(u)} className="text-sm font-medium text-slate-700 cursor-pointer focus:bg-slate-50 focus:text-amber-700 rounded-lg m-1">
+                                                        {u.is_active === false ? (
+                                                            <><CheckCircleIcon className="mr-2 h-4 w-4 text-emerald-600" /> Enable Login</>
+                                                        ) : (
+                                                            <><BanIcon className="mr-2 h-4 w-4 text-rose-600" /> Disable Login</>
+                                                        )}
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem onClick={() => handleDelete(u.user_id)} className="text-sm font-medium text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-700 rounded-lg m-1">
                                                         <TrashIcon className="mr-2 h-4 w-4" /> Delete User
@@ -371,7 +422,7 @@ export default function UserTable() {
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                                <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                                     No users found.
                                 </TableCell>
                             </TableRow>

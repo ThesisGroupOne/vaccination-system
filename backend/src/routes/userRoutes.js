@@ -1,5 +1,14 @@
 const express = require('express');
-const { getUsers, createUser, updateUser, deleteUser, getProfile, updateProfile, uploadProfileImage } = require('../controllers/userController');
+const {
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  getProfile,
+  updateProfile,
+  uploadProfileImage,
+  setDoctorAuthorization,
+} = require('../controllers/userController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
 const multer = require('multer');
@@ -44,6 +53,7 @@ router.post('/profile/image', authMiddleware, upload.single('image'), uploadProf
 
 router.get('/', authMiddleware, getUsers);
 router.post('/', authMiddleware, roleMiddleware([]), createUser);
+router.patch('/authorization', authMiddleware, roleMiddleware([]), setDoctorAuthorization);
 router.put('/:id', authMiddleware, roleMiddleware([]), updateUser);
 router.delete('/:id', authMiddleware, roleMiddleware([]), deleteUser);
 

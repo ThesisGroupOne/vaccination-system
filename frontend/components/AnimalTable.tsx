@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchIcon, PlusIcon, MoreHorizontalIcon, Loader2Icon, PrinterIcon, LayersIcon, EditIcon, TrashIcon } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { canEdit } from '@/lib/permissions';
+import { canEdit, canDelete } from '@/lib/permissions';
 
 interface Farm {
   farm_id: number;
@@ -24,13 +24,23 @@ interface Animal {
   nickname?: string;
   animal_type: string;
   age: number;
-  biological_type: string;
-  is_pregnant: boolean;
+  weight?: number;
+  biological_type?: string;
+  is_pregnant?: boolean;
   status: string;
   farm_id: number;
-  farm?: { farm_name: string };
+  farm?: Farm;
   vaccinations?: unknown[];
+  routineRecords?: unknown[];
+  total_doses?: number;
 }
+
+const formatAnimalID = (type: string, id: number) => {
+  if (type === 'Goat') return `GT-${id}`;
+  if (type === 'Cattle') return `CT-${id}`;
+  if (type === 'Camel') return `CM-${id}`;
+  return `ID-${id}`;
+};
 
 export default function AnimalTable() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -42,11 +52,21 @@ export default function AnimalTable() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  const [isMortalityModalOpen, setIsMortalityModalOpen] = useState(false);
+  const [mortalityAnimal, setMortalityAnimal] = useState<Animal | null>(null);
+  const [mortalityData, setMortalityData] = useState({
+    death_date: new Date().toISOString().split('T')[0],
+    cause_of_death: 'Vaccine Reaction',
+    notes: ''
+  });
+
   // Form State
   const [formData, setFormData] = useState({
     nickname: '',
     animal_type: '',
     age: '',
+    age_unit: 'months' as 'months' | 'years',
+    weight: '',
     biological_type: '',
     is_pregnant: false,
     status: 'Active',
@@ -115,7 +135,10 @@ export default function AnimalTable() {
       const payload = {
         nickname: formData.nickname,
         animal_type: formData.animal_type,
-        age: parseInt(formData.age),
+        age_months: formData.age_unit === 'years'
+          ? Math.round(parseFloat(formData.age) * 12)
+          : parseFloat(formData.age),
+        weight: formData.weight ? parseFloat(formData.weight) : null,
         biological_type: formData.biological_type,
         is_pregnant: formData.is_pregnant,
         status: formData.status,
@@ -137,6 +160,8 @@ export default function AnimalTable() {
           nickname: '',
           animal_type: '',
           age: '',
+          age_unit: 'months',
+          weight: '',
           biological_type: '',
           is_pregnant: false,
           status: 'Active',
@@ -165,7 +190,10 @@ export default function AnimalTable() {
       const payload = {
         nickname: formData.nickname,
         animal_type: formData.animal_type,
-        age: parseInt(formData.age),
+        age_months: formData.age_unit === 'years'
+          ? Math.round(parseFloat(formData.age) * 12)
+          : parseFloat(formData.age),
+        weight: formData.weight ? parseFloat(formData.weight) : null,
         biological_type: formData.biological_type,
         is_pregnant: formData.is_pregnant,
         status: formData.status,
@@ -188,6 +216,8 @@ export default function AnimalTable() {
           nickname: '',
           animal_type: '',
           age: '',
+          age_unit: 'months',
+          weight: '',
           biological_type: '',
           is_pregnant: false,
           status: 'Active',
@@ -207,11 +237,43 @@ export default function AnimalTable() {
     }
   };
 
+  const handleReportMortality = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mortalityAnimal) return;
+    setIsSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:9999/api/animals/${mortalityAnimal.animal_id}/report-death`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(mortalityData)
+      });
+      if (res.ok) {
+        toast.success("Mortality reported successfully. Animal marked as Deceased.");
+        setIsMortalityModalOpen(false);
+        setMortalityAnimal(null);
+        fetchAnimals();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to report mortality.");
+      }
+    } catch (error) {
+      toast.error('An unexpected error occurred.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const openEditModal = (animal: Animal) => {
     setFormData({
       nickname: animal.nickname || '',
       animal_type: animal.animal_type || '',
-      age: animal.age.toString(),
+      age: animal.age ? Math.round(animal.age * 12).toString() : '',
+      age_unit: 'months',
+      weight: animal.weight ? animal.weight.toString() : '',
       biological_type: animal.biological_type || '',
       is_pregnant: animal.is_pregnant || false,
       status: animal.status || 'Active',
@@ -391,9 +453,66 @@ export default function AnimalTable() {
                     </Select>
                   </div>
 
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="age" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Age</Label>
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        id="age"
+                        type="number"
+                        step="1"
+                        min={
+                          formData.age_unit === 'months'
+                            ? (formData.animal_type === 'Goat' ? 3 : formData.animal_type === 'Cattle' ? 4 : formData.animal_type === 'Camel' ? 6 : 1)
+                            : 1
+                        }
+                        max={formData.age_unit === 'months' ? 180 : 15}
+                        required
+                        value={formData.age}
+                        onChange={e => setFormData({ ...formData, age: e.target.value })}
+                        placeholder={formData.age_unit === 'months'
+                          ? (formData.animal_type === 'Goat' ? 'e.g. 3' : formData.animal_type === 'Cattle' ? 'e.g. 4' : formData.animal_type === 'Camel' ? 'e.g. 6' : 'e.g. 12')
+                          : 'e.g. 2'
+                        }
+                        className="rounded-xl border-slate-200 h-11 bg-slate-50/50 flex-1"
+                      />
+                      <div className="flex rounded-xl border border-slate-200 overflow-hidden h-11">
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, age_unit: 'months', age: '' })}
+                          className={`px-3 text-xs font-bold transition-all ${
+                            formData.age_unit === 'months'
+                              ? 'bg-[#2FA4D7] text-white'
+                              : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          Months
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, age_unit: 'years', age: '' })}
+                          className={`px-3 text-xs font-bold transition-all border-l border-slate-200 ${
+                            formData.age_unit === 'years'
+                              ? 'bg-[#2FA4D7] text-white'
+                              : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          Years
+                        </button>
+                      </div>
+                    </div>
+                    {formData.animal_type && (
+                      <p className="text-[10px] text-slate-400 ml-1">
+                        {formData.age_unit === 'months'
+                          ? `Min: ${formData.animal_type === 'Goat' ? '3' : formData.animal_type === 'Cattle' ? '4' : '6'} bilood · Max: 180 bilood (15 sano)`
+                          : `Min: 1 sano · Max: 15 sano`
+                        }
+                      </p>
+                    )}
+                  </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="age" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Age (Years)</Label>
-                    <Input id="age" type="number" required value={formData.age} onChange={e => setFormData({ ...formData, age: e.target.value })} placeholder="e.g. 3" className="rounded-xl border-slate-200 h-11 bg-slate-50/50" />
+                    <Label htmlFor="weight" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Weight (kg)</Label>
+                    <Input id="weight" type="number" step="0.1" value={formData.weight} onChange={e => setFormData({ ...formData, weight: e.target.value })} placeholder="e.g. 50.5" className="rounded-xl border-slate-200 h-11 bg-slate-50/50" />
                   </div>
 
                   <div className="space-y-2">
@@ -497,9 +616,66 @@ export default function AnimalTable() {
                     </Select>
                   </div>
 
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="edit_age" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Age</Label>
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        id="edit_age"
+                        type="number"
+                        step="1"
+                        min={
+                          formData.age_unit === 'months'
+                            ? (formData.animal_type === 'Goat' ? 3 : formData.animal_type === 'Cattle' ? 4 : formData.animal_type === 'Camel' ? 6 : 1)
+                            : 1
+                        }
+                        max={formData.age_unit === 'months' ? 180 : 15}
+                        required
+                        value={formData.age}
+                        onChange={e => setFormData({ ...formData, age: e.target.value })}
+                        placeholder={formData.age_unit === 'months'
+                          ? (formData.animal_type === 'Goat' ? 'e.g. 3' : formData.animal_type === 'Cattle' ? 'e.g. 4' : formData.animal_type === 'Camel' ? 'e.g. 6' : 'e.g. 12')
+                          : 'e.g. 2'
+                        }
+                        className="rounded-xl border-slate-200 h-11 bg-slate-50/50 flex-1"
+                      />
+                      <div className="flex rounded-xl border border-slate-200 overflow-hidden h-11">
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, age_unit: 'months', age: '' })}
+                          className={`px-3 text-xs font-bold transition-all ${
+                            formData.age_unit === 'months'
+                              ? 'bg-[#2FA4D7] text-white'
+                              : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          Months
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, age_unit: 'years', age: '' })}
+                          className={`px-3 text-xs font-bold transition-all border-l border-slate-200 ${
+                            formData.age_unit === 'years'
+                              ? 'bg-[#2FA4D7] text-white'
+                              : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          Years
+                        </button>
+                      </div>
+                    </div>
+                    {formData.animal_type && (
+                      <p className="text-[10px] text-slate-400 ml-1">
+                        {formData.age_unit === 'months'
+                          ? `Min: ${formData.animal_type === 'Goat' ? '3' : formData.animal_type === 'Cattle' ? '4' : '6'} bilood · Max: 180 bilood (15 sano)`
+                          : `Min: 1 sano · Max: 15 sano`
+                        }
+                      </p>
+                    )}
+                  </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="edit_age" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Age (Years)</Label>
-                    <Input id="edit_age" type="number" required value={formData.age} onChange={e => setFormData({ ...formData, age: e.target.value })} placeholder="e.g. 3" className="rounded-xl border-slate-200 h-11 bg-slate-50/50" />
+                    <Label htmlFor="edit_weight" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Weight (kg)</Label>
+                    <Input id="edit_weight" type="number" step="0.1" value={formData.weight} onChange={e => setFormData({ ...formData, weight: e.target.value })} placeholder="e.g. 50.5" className="rounded-xl border-slate-200 h-11 bg-slate-50/50" />
                   </div>
 
                   <div className="space-y-2">
@@ -528,6 +704,49 @@ export default function AnimalTable() {
               </form>
             </DialogContent>
           </Dialog>
+          )}
+
+          {canEdit('Animals', role) && mortalityAnimal && (
+            <Dialog open={isMortalityModalOpen} onOpenChange={setIsMortalityModalOpen}>
+              <DialogContent className="sm:max-w-[400px] rounded-[24px] border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] bg-white p-6">
+                <form onSubmit={handleReportMortality}>
+                  <DialogHeader className="mb-4">
+                    <DialogTitle className="text-xl font-extrabold text-rose-600">Report Mortality</DialogTitle>
+                    <DialogDescription className="text-xs text-slate-500 font-medium">
+                      Report the death of {mortalityAnimal.nickname || 'Animal'} (#{mortalityAnimal.animal_id}).
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Date of Death</Label>
+                      <Input type="date" required value={mortalityData.death_date} onChange={e => setMortalityData({...mortalityData, death_date: e.target.value})} className="rounded-xl border-slate-200 h-11 bg-slate-50/50" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Cause of Death</Label>
+                      <Select value={mortalityData.cause_of_death} onValueChange={v => setMortalityData({...mortalityData, cause_of_death: v})}>
+                        <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-rose-500 transition-all">
+                          <SelectValue placeholder="Select cause" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden">
+                          <SelectItem value="Vaccine Reaction" className="rounded-lg m-1 font-medium">Vaccine Reaction</SelectItem>
+                          <SelectItem value="Illness" className="rounded-lg m-1 font-medium">Illness</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Details / Notes</Label>
+                      <textarea required={mortalityData.cause_of_death === 'Vaccine Reaction'} placeholder="Explain the reaction or cause in detail..." className="w-full rounded-xl border border-slate-200 p-3 text-sm bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-rose-500" rows={3} value={mortalityData.notes} onChange={e => setMortalityData({...mortalityData, notes: e.target.value})}></textarea>
+                    </div>
+                  </div>
+                  <DialogFooter className="mt-4 gap-3">
+                    <Button type="button" variant="ghost" onClick={() => setIsMortalityModalOpen(false)} disabled={isSaving} className="rounded-xl border-slate-200">Cancel</Button>
+                    <Button type="submit" disabled={isSaving} className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl px-8 shadow-lg shadow-rose-600/20">
+                      {isSaving ? 'Submitting...' : 'Report Death'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           )}
         </div>
       </div>
@@ -582,7 +801,7 @@ export default function AnimalTable() {
                 filteredAnimals.map((animal) => (
                   <TableRow key={animal.animal_id} className="cursor-pointer hover:bg-slate-50 transition-colors border-b border-gray-50 group">
                     <TableCell className="pl-6 py-3">
-                      <span className="font-bold text-slate-700 text-xs">#{animal.animal_id}</span>
+                      <span className="font-bold text-slate-700 text-xs">{formatAnimalID(animal.animal_type, animal.animal_id)}</span>
                     </TableCell>
                     <TableCell className="py-3">
                       <div className="flex items-center gap-3">
@@ -597,7 +816,7 @@ export default function AnimalTable() {
                     </TableCell>
                     <TableCell className="text-slate-500 hidden md:table-cell text-xs font-medium py-3">
                       <div className="flex flex-col gap-1">
-                        <span>{animal.biological_type}, {animal.age} yrs</span>
+                        <span>{animal.biological_type}, {animal.age ? (animal.age >= 1 ? `${Math.round(animal.age * 12)} bilood (${animal.age.toFixed(1)} yr)` : `${Math.round(animal.age * 12)} bilood`) : 'N/A'} {animal.weight ? `· ${animal.weight} kg` : ''}</span>
                         {animal.is_pregnant && (
                           <Badge variant="outline" className="w-fit text-[9px] py-0 px-1.5 border-amber-500 text-amber-600 bg-amber-50 font-bold uppercase tracking-wider rounded-full">Pregnant</Badge>
                         )}
@@ -628,7 +847,7 @@ export default function AnimalTable() {
                     <TableCell className="text-slate-500 text-xs font-medium py-3">{animal.farm?.farm_name || `Farm ${animal.farm_id}`}</TableCell>
                     <TableCell className="py-3">
                       <Badge variant="outline" className="rounded-full font-bold px-2 py-0.5 border-blue-200 text-blue-600 bg-blue-50 text-[10px]">
-                        {animal.vaccinations?.length || 0} Doses
+                        {(animal.total_doses ?? ((animal.vaccinations?.length || 0) + (animal.routineRecords?.length || 0)))} Doses
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right pr-6 py-3">
@@ -655,14 +874,34 @@ export default function AnimalTable() {
                               <PrinterIcon className="mr-2 h-4 w-4" /> Print ID Card
                             </DropdownMenuItem>
                             {canEdit('Animals', role) && (
-                              <>
                                 <DropdownMenuItem onClick={() => openEditModal(animal)} className="text-sm font-medium text-slate-700 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg m-1">
                                   <EditIcon className="mr-2 h-4 w-4" /> Edit Record
                                 </DropdownMenuItem>
+                            )}
+                            
+                            {canDelete('Animals', role) && (
+                              <>
                                 <DropdownMenuSeparator className="bg-slate-100" />
                                 <DropdownMenuItem onClick={() => handleDelete(animal.animal_id)} className="text-sm font-medium text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-700 rounded-lg m-1">
                                   <TrashIcon className="mr-2 h-4 w-4" /> Delete Animal
                                 </DropdownMenuItem>
+                              </>
+                            )}
+
+                            {canEdit('Animals', role) && animal.status === 'Active' && (
+                                  <>
+                                    <DropdownMenuSeparator className="bg-slate-100" />
+                                    <DropdownMenuItem onClick={() => {
+                                      setMortalityAnimal(animal);
+                                      setMortalityData({
+                                        death_date: new Date().toISOString().split('T')[0],
+                                        cause_of_death: 'Vaccine Reaction',
+                                        notes: ''
+                                      });
+                                      setIsMortalityModalOpen(true);
+                                    }} className="text-sm font-medium text-rose-600 cursor-pointer focus:bg-rose-50 focus:text-rose-700 rounded-lg m-1">
+                                      <span className="mr-2 h-4 w-4 flex items-center justify-center">☠️</span> Report Death
+                                    </DropdownMenuItem>
                               </>
                             )}
                           </DropdownMenuContent>

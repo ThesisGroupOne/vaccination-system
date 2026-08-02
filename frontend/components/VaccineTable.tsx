@@ -18,6 +18,7 @@ interface Vaccine {
     description?: string;
     validity_period_days: number;
     recommended_interval_days: number;
+    target_animal: string;
     created_at: string;
 }
 
@@ -33,7 +34,8 @@ export default function VaccineTable() {
         vaccine_name: '',
         description: '',
         validity_period_days: '',
-        recommended_interval_days: ''
+        recommended_interval_days: '',
+        target_animal: 'Goat'
     });
 
     const fetchVaccines = async () => {
@@ -77,7 +79,7 @@ export default function VaccineTable() {
             if (res.ok) {
                 toast.success("Vaccine created successfully");
                 setIsAddModalOpen(false);
-                setFormData({ vaccine_name: '', description: '', validity_period_days: '', recommended_interval_days: '' });
+                setFormData({ vaccine_name: '', description: '', validity_period_days: '', recommended_interval_days: '', target_animal: 'Goat' });
                 fetchVaccines();
             } else {
                 toast.error("Failed to create vaccine");
@@ -107,7 +109,7 @@ export default function VaccineTable() {
                 toast.success("Vaccine updated successfully");
                 setIsEditModalOpen(false);
                 setEditingVaccineId(null);
-                setFormData({ vaccine_name: '', description: '', validity_period_days: '', recommended_interval_days: '' });
+                setFormData({ vaccine_name: '', description: '', validity_period_days: '', recommended_interval_days: '', target_animal: 'Goat' });
                 fetchVaccines();
             } else {
                 toast.error("Failed to update vaccine");
@@ -143,7 +145,8 @@ export default function VaccineTable() {
             vaccine_name: vaccine.vaccine_name,
             description: vaccine.description || '',
             validity_period_days: vaccine.validity_period_days.toString(),
-            recommended_interval_days: vaccine.recommended_interval_days.toString()
+            recommended_interval_days: vaccine.recommended_interval_days.toString(),
+            target_animal: vaccine.target_animal || 'Goat'
         });
         setEditingVaccineId(vaccine.vaccine_id);
         setIsEditModalOpen(true);
@@ -187,6 +190,14 @@ export default function VaccineTable() {
                                     <Label htmlFor="description" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Description</Label>
                                     <Input id="description" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Short purpose of the vaccine" className="rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-emerald-500" />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="target_animal" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Animal</Label>
+                                    <select id="target_animal" value={formData.target_animal} onChange={e => setFormData({ ...formData, target_animal: e.target.value })} className="w-full rounded-xl h-11 px-3 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-emerald-500 outline-none">
+                                        <option value="Goat">Goat</option>
+                                        <option value="Camel">Camel</option>
+                                        <option value="Cattle">Cattle</option>
+                                    </select>
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="validity" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Validity (Days)</Label>
@@ -225,6 +236,14 @@ export default function VaccineTable() {
                                     <Label htmlFor="edit_description" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Description</Label>
                                     <Input id="edit_description" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Short purpose of the vaccine" className="rounded-xl h-11 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-emerald-500" />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="edit_target_animal" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Animal</Label>
+                                    <select id="edit_target_animal" value={formData.target_animal} onChange={e => setFormData({ ...formData, target_animal: e.target.value })} className="w-full rounded-xl h-11 px-3 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-emerald-500 outline-none">
+                                        <option value="Goat">Goat</option>
+                                        <option value="Camel">Camel</option>
+                                        <option value="Cattle">Cattle</option>
+                                    </select>
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="edit_validity" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Validity (Days)</Label>
@@ -254,6 +273,7 @@ export default function VaccineTable() {
                     <TableHeader className="bg-gray-50/50">
                         <TableRow className="hover:bg-transparent border-b border-gray-50">
                             <TableHead className="pl-6 h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest w-[250px]">Vaccine Name</TableHead>
+                            <TableHead className="h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Animal</TableHead>
                             <TableHead className="h-11 font-bold text-[10px] text-slate-400 uppercase tracking-widest">Description</TableHead>
                             <TableHead className="h-11 text-center font-bold text-[10px] text-slate-400 uppercase tracking-widest">Validity</TableHead>
                             <TableHead className="h-11 text-center font-bold text-[10px] text-slate-400 uppercase tracking-widest">Interval</TableHead>
@@ -272,6 +292,11 @@ export default function VaccineTable() {
                             vaccines.map((v) => (
                                 <TableRow key={v.vaccine_id} className="hover:bg-slate-50 transition-colors border-b border-gray-50 group">
                                     <TableCell className="pl-6 py-3 font-bold text-slate-700 text-xs">{v.vaccine_name}</TableCell>
+                                    <TableCell className="py-3">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                            {v.target_animal || 'Goat'}
+                                        </span>
+                                    </TableCell>
                                     <TableCell className="text-slate-500 text-xs font-medium py-3 max-w-[200px] truncate">
                                         {v.description || 'No description'}
                                     </TableCell>

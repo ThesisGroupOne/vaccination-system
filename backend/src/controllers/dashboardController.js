@@ -19,7 +19,14 @@ exports.getStats = async (req, res) => {
             where: { status: 'Pending' }
         });
 
-        const totalVaccinations = await prisma.vaccination.count();
+        let totalVaccinations = 0;
+        if (req.user?.role === 'Doctor') {
+            totalVaccinations = await prisma.vaccination.count({
+                where: { administered_by: req.user.userId }
+            });
+        } else {
+            totalVaccinations = await prisma.vaccination.count();
+        }
 
         // 1. Top 4 Farms
         const farms = await prisma.farm.findMany({
@@ -30,6 +37,7 @@ exports.getStats = async (req, res) => {
 
         // 2. Top 4 Vaccine Stocks
         const vaccineInventory = await prisma.vaccineStock.findMany({
+            where: { is_archived: false },
             include: { vaccine: true },
             orderBy: { created_at: 'desc' },
             take: 4
@@ -42,6 +50,7 @@ exports.getStats = async (req, res) => {
             take: 5
         });
         const recentStocks = await prisma.vaccineStock.findMany({
+            where: { is_archived: false },
             include: { vaccine: true },
             orderBy: { created_at: 'desc' },
             take: 5

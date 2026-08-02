@@ -44,8 +44,6 @@ export default function Navbar() {
         const res = await fetch('http://localhost:9999/api/reminders', {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}` },
-          mode: 'cors',
-          credentials: 'include',
         });
         if (res.ok) {
           const data = await res.json()

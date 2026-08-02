@@ -16,6 +16,7 @@ exports.getReminders = async (req, res) => {
         // 1. Vaccine Expiry Reminder
         const expiringStocks = await prisma.vaccineStock.findMany({
             where: {
+                is_archived: false,
                 quantity_remaining: { gt: 0 },
                 expiry_date: { lte: expiryThreshold }
             },
@@ -37,6 +38,7 @@ exports.getReminders = async (req, res) => {
         // 2. Stock Depletion Reminder
         const lowStocks = await prisma.vaccineStock.findMany({
             where: {
+                is_archived: false,
                 quantity_remaining: { lt: 50, gt: 0 }
             },
             include: { vaccine: true }
@@ -54,7 +56,7 @@ exports.getReminders = async (req, res) => {
         });
 
         const zeroStocks = await prisma.vaccineStock.findMany({
-            where: { quantity_remaining: 0 },
+            where: { is_archived: false, quantity_remaining: 0 },
             include: { vaccine: true }
         });
 

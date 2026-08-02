@@ -71,15 +71,23 @@ export default function ReportIssueForm() {
                     animal_id: parseInt(formData.animal_id),
                     symptoms: formData.symptoms,
                     farm_id: animals.find(a => a.animal_id === parseInt(formData.animal_id))?.farm_id,
-                    user_id: 1 // Default user_id for now, backend should override this from JWT
                 })
             });
 
             if (res.ok) {
-                toast.success("Observation reported successfully");
+                const data = await res.json();
+                const mail = data?.email_notification;
+                if (mail?.ok) {
+                    toast.success(`Observation reported. Gmail sent to ${mail.sent} doctor(s).`);
+                } else if (mail && (mail.sent > 0 || mail.failed > 0)) {
+                    toast.warning(`Observation reported. Gmail sent: ${mail.sent}, failed: ${mail.failed}.`);
+                } else {
+                    toast.warning("Observation reported, but no doctor Gmail was notified.");
+                }
                 setFormData({ animal_id: '', symptoms: '' });
             } else {
-                toast.error("Failed to submit report");
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.error || "Failed to submit report");
             }
         } catch (error) {
             console.error(error);
