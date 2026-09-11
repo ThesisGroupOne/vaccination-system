@@ -22,6 +22,7 @@ import {
   BellIcon,
   ClipboardListIcon,
   ArrowRightLeftIcon,
+  StoreIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { canView } from '@/lib/permissions';
@@ -68,6 +69,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         ...(canView('Animals', role) ? [{ href: '/dashboard/animals', label: 'Animals Registration', icon: LayersIcon }] : []),
         ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccines', label: 'Vaccines', icon: SyringeIcon }] : []),
         ...(canView('VaccineRequests', role) ? [{ href: '/dashboard/vaccine-requests', label: 'Vaccine Requests', icon: ClipboardListIcon }] : []),
+        ...(canView('VaccineStores', role) ? [{ href: '/dashboard/vaccine-stores', label: 'Vaccine Stores', icon: StoreIcon }] : []),
         ...(canView('Stock', role) ? [{ href: '/dashboard/stock', label: 'Inventory (Stock)', icon: PackageIcon }] : []),
         { href: '/dashboard/routine-vaccination', label: 'Routine Vaccination', icon: CalendarIcon },
         ...(canView('Vaccines', role) ? [{ href: '/dashboard/vaccination-list', label: 'Vaccination List', icon: FileTextIcon }] : []),

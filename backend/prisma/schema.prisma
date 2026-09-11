@@ -47,6 +47,7 @@ enum AnimalStatus {
   Active
   Sold
   Deceased
+  Completed
 }
 
 model Animal {
@@ -55,7 +56,9 @@ model Animal {
   animal_type     String
   biological_type String       @default("Unknown")
   is_pregnant     Boolean      @default(false)
-  age             Float
+  pregnancy_start_date DateTime?
+  age             Float        // legacy snapshot (years); live age is computed from date_of_birth
+  date_of_birth   DateTime?
   weight          Float?
   status          AnimalStatus @default(Active)
   farm_id         Int
@@ -84,6 +87,13 @@ model Vaccine {
   routineTemplates RoutineVaccinationTemplate[]
   routineCampaigns RoutineVaccinationCampaign[]
   routineRecords   RoutineVaccinationRecord[]
+}
+
+model VaccineStore {
+  store_id      Int      @id @default(autoincrement())
+  store_name    String
+  store_address String
+  created_at    DateTime @default(now())
 }
 
 model VaccineStock {

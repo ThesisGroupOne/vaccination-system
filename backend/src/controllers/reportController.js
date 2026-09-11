@@ -1,5 +1,5 @@
 const path = require('path');
-const PDFDocument = require('pdfkit');
+const PDFDocument = require('pdfkit-table');
 const prisma = require(path.join(__dirname, '../../config/db'));
 
 function parseDateRange(from, to, fieldName) {
@@ -22,8 +22,85 @@ function toDisplayValue(v) {
   return String(v);
 }
 
+/** PDF report branding (matches system / example layout) */
+const PDF_BRAND = {
+  centerName: process.env.CENTER_NAME || 'Mumin Group',
+  systemName: process.env.CENTER_SYSTEM || 'Livestock Vaccination System',
+  address: process.env.CENTER_ADDRESS || 'Mogadishu, Somalia',
+  phone: process.env.CENTER_PHONE || '',
+  email: process.env.CENTER_EMAIL || '',
+  authorizedTitle: process.env.CENTER_AUTHORIZED || 'Center Manager',
+  brandBlue: '#2563EB', // Sidebar from-blue-600 — project branding
+};
+
+const MODULE_PDF_LABELS = {
+  animals: 'Animal Registration Report',
+  vaccinated_animals: 'Vaccinated Animals Report',
+  animal_status: 'Animal Status Report',
+  unvaccinated_animals: 'Unvaccinated Animals Report',
+  routine_vaccinations: 'Routine Vaccination Report',
+  emergency_vaccinations: 'Emergency Vaccination Report',
+  overdue_vaccinations: 'Overdue / Due Soon Report',
+  vaccination_coverage: 'Vaccination Coverage Report',
+  decision_insights: 'Decision Insights Report',
+  farms: 'Farm Report',
+  stock: 'Vaccine Stock Report',
+  stock_risk: 'Stock Risk Report',
+  schedules: 'Vaccination Schedule Report',
+  queue: 'Vaccination Queue Report',
+  mortality: 'Mortality Report',
+  alerts: 'Alert Report',
+};
+
+const PDF_SUMMABLE_KEYS = new Set([
+  'animals_count', 'alerts_count', 'schedules_count',
+  'emergency_doses', 'routine_doses', 'total_doses',
+  'purchased', 'remaining', 'dosage_ml',
+  'total_animals', 'vaccinated', 'unvaccinated',
+  'age', 'qty', 'quantity',
+]);
+
+const PDF_AVERAGE_KEYS = new Set(['coverage_pct', 'avg_animals_per_farm']);
+
+function getPdfReportTitle(moduleName, reportType) {
+  const base = MODULE_PDF_LABELS[moduleName] || `${String(moduleName).replace(/_/g, ' ')} Report`;
+  if (reportType === 'all') return `All ${base}`;
+  if (reportType === 'between') return `${base} (Between Dates)`;
+  return `Single ${base}`;
+}
+
+function formatPdfLongDate(date = new Date()) {
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function buildPdfTotalsRow(columns, rows) {
+  if (!columns.length) return [];
+  return columns.map((col, index) => {
+    if (index === 0) return 'TOTAL';
+    if (PDF_AVERAGE_KEYS.has(col.key)) {
+      const nums = rows
+        .map((r) => Number(r[col.key]))
+        .filter((n) => Number.isFinite(n));
+      if (!nums.length) return '';
+      const avg = nums.reduce((s, n) => s + n, 0) / nums.length;
+      return Number(avg.toFixed(1)).toString();
+    }
+    if (!PDF_SUMMABLE_KEYS.has(col.key)) return '';
+    const sum = rows.reduce((acc, r) => {
+      const n = Number(r[col.key]);
+      return acc + (Number.isFinite(n) ? n : 0);
+    }, 0);
+    if (col.key === 'dosage_ml') return Number(sum.toFixed(2)).toString();
+    return Number.isInteger(sum) ? String(sum) : Number(sum.toFixed(2)).toString();
+  });
+}
+
+function getPdfCenterContactLine() {
+  return [PDF_BRAND.address, PDF_BRAND.phone, PDF_BRAND.email].filter(Boolean).join(' · ');
+}
+
 /** Animal filters used across report modules */
-function buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo }) {
+function buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
   const animalConditions = {};
   if (farmId) animalConditions.farm_id = farmId;
   if (animalType) animalConditions.animal_type = animalType;
@@ -31,19 +108,33 @@ function buildAnimalFilterConditions({ farmId, animalType, gender, status, regFr
   if (gender) {
     animalConditions.biological_type = { contains: gender, mode: 'insensitive' };
   }
-  if (status) animalConditions.status = status;
+  if (status) {
+    if (status === 'Completed') {
+      animalConditions.status = 'Active';
+    } else {
+      animalConditions.status = status;
+    }
+  }
   if (regFrom || regTo) {
     Object.assign(animalConditions, parseDateRange(regFrom, regTo, 'created_at'));
+  }
+  // Age is stored in months (float). Filter one full month bucket, e.g. 6 → [6, 7).
+  if (ageMonths != null && ageMonths !== '' && Number.isFinite(Number(ageMonths))) {
+    const age = Number(ageMonths);
+    if (age >= 0) {
+      animalConditions.age = { gte: age, lt: age + 1 };
+    }
   }
   return animalConditions;
 }
 
-/** Same rules as Inventory (Stock) UI: Expired > Low Stock (<10) > Normal */
+/** Same rules as Inventory (Stock) UI: Expired > Out of Stock (0) > Low Stock (<10) > Normal */
 const STOCK_LOW_THRESHOLD = 10;
 
 function getStockInventoryStatus(expiryDate, quantityRemaining) {
   const expiry = new Date(expiryDate);
   if (!Number.isNaN(expiry.getTime()) && expiry < new Date()) return 'Expired';
+  if (Number(quantityRemaining) <= 0) return 'Out of Stock';
   if (Number(quantityRemaining) < STOCK_LOW_THRESHOLD) return 'Low Stock';
   return 'Normal';
 }
@@ -64,9 +155,15 @@ function buildReportSummary(moduleName, rows) {
   const summary = { total: rows.length };
 
   if (['animals', 'vaccinated_animals', 'animal_status'].includes(moduleName)) {
-    summary.active = rows.filter((r) => r.status === 'Active').length;
+    summary.active = rows.filter((r) => r.status === 'Active' || r.status === 'Completed').length;
     summary.sold = rows.filter((r) => r.status === 'Sold').length;
     summary.deceased = rows.filter((r) => r.status === 'Deceased').length;
+  }
+
+  if (moduleName === 'vaccinated_animals') {
+    summary.emergency_doses = rows.reduce((sum, r) => sum + (Number(r.emergency_doses) || 0), 0);
+    summary.routine_doses = rows.reduce((sum, r) => sum + (Number(r.routine_doses) || 0), 0);
+    summary.total_doses = summary.emergency_doses + summary.routine_doses;
   }
 
   if (moduleName === 'stock') {
@@ -129,7 +226,7 @@ function buildReportSummary(moduleName, rows) {
   }
 
   if (moduleName === 'unvaccinated_animals') {
-    summary.active = rows.filter((r) => r.status === 'Active').length;
+    summary.active = rows.filter((r) => r.status === 'Active' || r.status === 'Completed').length;
     summary.needs_vaccination = rows.length;
   }
 
@@ -169,11 +266,37 @@ function buildReportSummary(moduleName, rows) {
   return summary;
 }
 
-async function buildVaccinationReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo }) {
-  const commonDateFilter = parseDateRange(from, to, 'date_administered');
-  const animalIdFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
 
-  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo });
+function buildIdFilter(reportType, singleId, idField, hasAnimalRelation = false) {
+  if (reportType !== 'single' || !singleId) return {};
+  const num = parseInt(singleId, 10);
+  
+  // Direct animal table
+  if (idField === 'animal_id' && !hasAnimalRelation) {
+    if (!isNaN(num)) {
+      return { OR: [{ animal_id: num }, { nickname: { contains: singleId, mode: 'insensitive' } }] };
+    }
+    return { nickname: { contains: singleId, mode: 'insensitive' } };
+  }
+  
+  // Table with animal relation (e.g. Vaccinations, Schedules, Alerts)
+  if (hasAnimalRelation) {
+    if (!isNaN(num)) {
+      return { OR: [{ [idField]: num }, { animal: { nickname: { contains: singleId, mode: 'insensitive' } } }] };
+    }
+    return { animal: { nickname: { contains: singleId, mode: 'insensitive' } } };
+  }
+  
+  // Non-animal tables (Farms, Users, Stock)
+  if (!isNaN(num)) return { [idField]: num };
+  return { [idField]: -1 }; // Force no match
+}
+
+async function buildVaccinationReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
+  const commonDateFilter = parseDateRange(from, to, 'date_administered');
+  const animalIdFilter = buildIdFilter(reportType, singleId, 'animal_id', true);
+
+  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
 
   const whereCondition = {
     ...animalIdFilter,
@@ -252,7 +375,7 @@ async function buildVaccinationReport({ reportType, singleId, from, to, farmId, 
 
 async function buildRoutineCampaignReport({ reportType, singleId, from, to }) {
   const commonDateFilter = parseDateRange(from, to, 'due_date');
-  const idFilter = reportType === 'single' && singleId ? { id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'id', true);
 
   const campaigns = await prisma.routineVaccinationCampaign.findMany({
     where: { ...idFilter, ...commonDateFilter },
@@ -298,9 +421,9 @@ async function buildRoutineCampaignReport({ reportType, singleId, from, to }) {
   return { columns, rows };
 }
 
-async function buildEmergencyAlertReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo }) {
+async function buildEmergencyAlertReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
-  const idFilter = reportType === 'single' && singleId ? { alert_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'alert_id', true);
 
   const whereCondition = {
     ...idFilter,
@@ -309,7 +432,7 @@ async function buildEmergencyAlertReport({ reportType, singleId, from, to, farmI
 
   if (farmId) whereCondition.farm_id = farmId;
 
-  const animalConditions = buildAnimalFilterConditions({ animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ animalType, gender, status, regFrom, regTo, ageMonths });
   // farm already applied on alert; don't duplicate farm_id on animal unless needed
   if (Object.keys(animalConditions).length > 0) {
     whereCondition.animal = animalConditions;
@@ -355,7 +478,7 @@ async function buildEmergencyAlertReport({ reportType, singleId, from, to, farmI
 async function buildStockReport({ reportType, singleId, from, to, vaccineId }) {
   // Mirror Inventory (Stock) page: all batches with same status rules
   const commonDateFilter = parseDateRange(from, to, 'purchase_date');
-  const idFilter = reportType === 'single' && singleId ? { stock_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'stock_id', false);
   const whereCondition = { ...idFilter, ...commonDateFilter };
   if (vaccineId) whereCondition.vaccine_id = vaccineId;
 
@@ -401,7 +524,7 @@ async function buildStockReport({ reportType, singleId, from, to, vaccineId }) {
 
 async function buildFarmReport({ reportType, singleId, from, to, farmId }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
-  const idFilter = reportType === 'single' && singleId ? { farm_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'farm_id', false);
   const locationFilter = farmId ? { farm_id: farmId } : {};
 
   const farms = await prisma.farm.findMany({
@@ -435,14 +558,14 @@ async function buildFarmReport({ reportType, singleId, from, to, farmId }) {
   return { columns, rows };
 }
 
-async function buildAnimalReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo }) {
+async function buildAnimalReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
-  const idFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'animal_id', false);
 
   const whereCondition = {
     ...idFilter,
     ...commonDateFilter,
-    ...buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo }),
+    ...buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths }),
   };
 
   const animals = await prisma.animal.findMany({
@@ -489,11 +612,11 @@ async function buildAnimalReport({ reportType, singleId, from, to, farmId, anima
   return { columns, rows };
 }
 
-async function buildUpcomingVaccinations({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo }) {
+async function buildUpcomingVaccinations({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'scheduled_date');
-  const animalIdFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+  const animalIdFilter = buildIdFilter(reportType, singleId, 'animal_id', true);
 
-  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
 
   const whereCondition = {
     ...animalIdFilter,
@@ -536,9 +659,9 @@ async function buildUpcomingVaccinations({ reportType, singleId, from, to, farmI
   return { columns, rows };
 }
 
-async function buildPendingAlerts({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo }) {
+async function buildPendingAlerts({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
-  const idFilter = reportType === 'single' && singleId ? { alert_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'alert_id', true);
 
   const whereCondition = {
     ...idFilter,
@@ -547,7 +670,7 @@ async function buildPendingAlerts({ reportType, singleId, from, to, farmId, anim
   };
   if (farmId) whereCondition.farm_id = farmId;
 
-  const animalConditions = buildAnimalFilterConditions({ animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ animalType, gender, status, regFrom, regTo, ageMonths });
 
   if (Object.keys(animalConditions).length > 0) whereCondition.animal = animalConditions;
 
@@ -588,7 +711,7 @@ async function buildPendingAlerts({ reportType, singleId, from, to, farmId, anim
 
 async function buildLowStock({ reportType, singleId, from, to }) {
   const commonDateFilter = parseDateRange(from, to, 'purchase_date');
-  const idFilter = reportType === 'single' && singleId ? { stock_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'stock_id', false);
 
   const stocks = await prisma.vaccineStock.findMany({
     where: { 
@@ -636,7 +759,7 @@ async function buildLowStock({ reportType, singleId, from, to }) {
 
 async function buildUsersReport({ reportType, singleId, from, to }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
-  const idFilter = reportType === 'single' && singleId ? { user_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'user_id', false);
 
   const users = await prisma.user.findMany({
     where: { ...idFilter, ...commonDateFilter },
@@ -662,21 +785,33 @@ async function buildUsersReport({ reportType, singleId, from, to }) {
   return { columns, rows };
 }
 
-async function buildVaccinatedAnimalsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId }) {
-  const commonDateFilter = parseDateRange(from, to, 'created_at');
-  const idFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+async function buildVaccinatedAnimalsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId, ageMonths }) {
+  const idFilter = buildIdFilter(reportType, singleId, 'animal_id', false);
+
+  // For Vaccinated Animals, the between dates should filter by vaccination date, not animal registration date
+  const dateFilterObj = {};
+  if (from || to) {
+    if (from) dateFilterObj.gte = new Date(from);
+    if (to) {
+      const end = new Date(to);
+      end.setHours(23, 59, 59, 999);
+      dateFilterObj.lte = end;
+    }
+  }
 
   const whereCondition = {
     ...idFilter,
-    ...commonDateFilter,
-    ...buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo }),
+    ...buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths }),
   };
 
-  // When a vaccine is selected: animals with at least 1 dose of that vaccine
-  if (vaccineId) {
+  const vacFilter = {};
+  if (vaccineId) vacFilter.vaccine_id = vaccineId;
+  if (from || to) vacFilter.date_administered = dateFilterObj;
+
+  if (Object.keys(vacFilter).length > 0) {
     whereCondition.OR = [
-      { vaccinations: { some: { vaccine_id: vaccineId } } },
-      { routineRecords: { some: { vaccine_id: vaccineId } } },
+      { vaccinations: { some: vacFilter } },
+      { routineRecords: { some: vacFilter } },
     ];
   } else {
     whereCondition.OR = [
@@ -690,11 +825,41 @@ async function buildVaccinatedAnimalsReport({ reportType, singleId, from, to, fa
     include: {
       farm: { select: { farm_name: true } },
       vaccinations: vaccineId
-        ? { where: { vaccine_id: vaccineId }, select: { vaccination_id: true, vaccine: { select: { vaccine_name: true } } } }
-        : { select: { vaccination_id: true, vaccine: { select: { vaccine_name: true } } } },
+        ? {
+            where: { vaccine_id: vaccineId },
+            select: {
+              vaccination_id: true,
+              administered_by: true,
+              vaccine: { select: { vaccine_name: true } },
+              user: { select: { user_id: true, full_name: true } },
+            },
+          }
+        : {
+            select: {
+              vaccination_id: true,
+              administered_by: true,
+              vaccine: { select: { vaccine_name: true } },
+              user: { select: { user_id: true, full_name: true } },
+            },
+          },
       routineRecords: vaccineId
-        ? { where: { vaccine_id: vaccineId }, select: { id: true, vaccine: { select: { vaccine_name: true } } } }
-        : { select: { id: true, vaccine: { select: { vaccine_name: true } } } },
+        ? {
+            where: { vaccine_id: vaccineId },
+            select: {
+              id: true,
+              administered_by: true,
+              vaccine: { select: { vaccine_name: true } },
+              administered_user: { select: { user_id: true, full_name: true } },
+            },
+          }
+        : {
+            select: {
+              id: true,
+              administered_by: true,
+              vaccine: { select: { vaccine_name: true } },
+              administered_user: { select: { user_id: true, full_name: true } },
+            },
+          },
       _count: { select: { alerts: true, schedules: true } },
     },
     orderBy: { created_at: 'desc' },
@@ -708,6 +873,43 @@ async function buildVaccinatedAnimalsReport({ reportType, singleId, from, to, fa
     });
     vaccineName = v?.vaccine_name || `Vaccine #${vaccineId}`;
   }
+
+  // Only fetch users who are actually Doctors
+  const doctorUsers = await prisma.user.findMany({
+    where: { role: { equals: 'Doctor', mode: 'insensitive' }, is_active: true },
+    select: { user_id: true, full_name: true, role: true },
+    orderBy: { full_name: 'asc' },
+  });
+  const doctorMap = new Map(
+    doctorUsers.map((d) => [
+      d.user_id,
+      { name: d.full_name, role: d.role, emergency: 0, routine: 0, total: 0 },
+    ])
+  );
+  for (const a of animals) {
+    for (const v of a.vaccinations || []) {
+      const id = v.user?.user_id || v.administered_by;
+      if (!doctorMap.has(id)) continue;
+      const d = doctorMap.get(id);
+      d.emergency += 1;
+      d.total += 1;
+    }
+    for (const r of a.routineRecords || []) {
+      const id = r.administered_user?.user_id || r.administered_by;
+      if (!doctorMap.has(id)) continue;
+      const d = doctorMap.get(id);
+      d.routine += 1;
+      d.total += 1;
+    }
+  }
+  const topDoctors = [...doctorMap.values()]
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+    .map((d) => ({
+      name: d.name,
+      total: d.total,
+      emergency: d.emergency,
+      routine: d.routine,
+    }));
 
   const rows = animals.map((a) => {
     const emergency = a.vaccinations.length;
@@ -749,7 +951,65 @@ async function buildVaccinatedAnimalsReport({ reportType, singleId, from, to, fa
     { key: 'created_at', label: 'Registered' },
   ];
 
-  return { columns, rows };
+  // Calculate age groups insight across ALL animals matching filters, not just vaccinated ones
+  const animalWhereAll = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
+  const allAnimals = await prisma.animal.findMany({
+    where: animalWhereAll,
+    include: {
+      vaccinations: vaccineId
+        ? { where: { vaccine_id: vaccineId }, select: { vaccination_id: true } }
+        : { select: { vaccination_id: true } },
+      routineRecords: vaccineId
+        ? { where: { vaccine_id: vaccineId }, select: { id: true } }
+        : { select: { id: true } },
+    }
+  });
+
+  const ageMap = new Map();
+  for (const a of allAnimals) {
+    const age = Math.round(Number(a.age) || 0);
+    const isVacc = (a.vaccinations?.length || 0) + (a.routineRecords?.length || 0) > 0;
+    if (!ageMap.has(age)) {
+      ageMap.set(age, { name: `${age}`, vaccinated: 0, unvaccinated: 0, sortKey: age });
+    }
+    const bucket = ageMap.get(age);
+    if (isVacc) bucket.vaccinated++;
+    else bucket.unvaccinated++;
+  }
+  const age_groups = Array.from(ageMap.values())
+    .sort((a, b) => a.sortKey - b.sortKey)
+    .map(g => ({ name: g.name, vaccinated: g.vaccinated, unvaccinated: g.unvaccinated }));
+
+  const speciesGenderMap = new Map();
+  for (const a of allAnimals) {
+    const isVacc = (a.vaccinations?.length || 0) + (a.routineRecords?.length || 0) > 0;
+    if (isVacc) {
+      const species = a.animal_type || 'Unknown';
+      const gender = (a.biological_type || 'Unknown').toLowerCase();
+      if (!speciesGenderMap.has(species)) {
+        speciesGenderMap.set(species, { name: species, Male: 0, Female: 0 });
+      }
+      const stats = speciesGenderMap.get(species);
+      if (gender.includes('female')) stats.Female++;
+      else if (gender.includes('male')) stats.Male++;
+      else stats.Female++; // Default to female if neither (edge case)
+    }
+  }
+  const species_gender_distribution = Array.from(speciesGenderMap.values());
+
+  return {
+    columns,
+    rows,
+    insights: {
+      top_doctors: topDoctors,
+      top_doctor_name: topDoctors[0]?.name || '—',
+      top_doctor_doses: topDoctors[0]?.total || 0,
+      emergency_total: topDoctors.reduce((s, d) => s + d.emergency, 0),
+      routine_total: topDoctors.reduce((s, d) => s + d.routine, 0),
+      age_groups,
+      species_gender_distribution,
+    },
+  };
 }
 
 async function buildAnimalStatusReport(args) {
@@ -779,11 +1039,11 @@ async function buildAnimalStatusReport(args) {
   return { columns, rows };
 }
 
-async function buildRoutineVaccinationsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId }) {
+async function buildRoutineVaccinationsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'date_administered');
-  const animalIdFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+  const animalIdFilter = buildIdFilter(reportType, singleId, 'animal_id', true);
 
-  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
 
   const whereCondition = { ...animalIdFilter, ...commonDateFilter };
   if (vaccineId) whereCondition.vaccine_id = vaccineId;
@@ -835,16 +1095,15 @@ async function buildRoutineVaccinationsReport({ reportType, singleId, from, to, 
   return { columns, rows };
 }
 
-async function buildEmergencyVaccinationsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId }) {
+async function buildEmergencyVaccinationsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId, ageMonths }) {
   // Real Emergency flow: Alert → schedule_type=Emergency → doctor completes → Vaccination record
   // Report MUST use completed Emergency schedules (not every row in Vaccination table).
   const dateFilter = parseDateRange(from, to, 'scheduled_date');
-  const idFilter = reportType === 'single' && singleId
-    ? { OR: [{ schedule_id: singleId }, { animal_id: singleId }] }
-    : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'schedule_id', true) || {};
+
 
   // Filter farm via animal.farm_id — Emergency schedules often have null schedule.farm_id
-  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
 
   const whereCondition = {
     schedule_type: 'Emergency',
@@ -972,12 +1231,12 @@ function pickRelatedAlert(animalAlerts, scheduledDate) {
     )[0];
 }
 
-async function buildScheduleReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo }) {
+async function buildScheduleReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'scheduled_date');
-  const idFilter = reportType === 'single' && singleId ? { schedule_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'schedule_id', true);
 
   // Farm via animal — many Emergency rows have null schedule.farm_id
-  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
 
   const whereCondition = { ...idFilter, ...commonDateFilter };
   if (Object.keys(animalConditions).length > 0) whereCondition.animal = animalConditions;
@@ -1029,11 +1288,11 @@ async function buildQueueReport(args) {
   return { columns: result.columns, rows };
 }
 
-async function buildMortalityReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo }) {
+async function buildMortalityReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'death_date');
-  const idFilter = reportType === 'single' && singleId ? { id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'id', true);
 
-  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
 
   const whereCondition = { ...idFilter, ...commonDateFilter };
   if (Object.keys(animalConditions).length > 0) whereCondition.animal = animalConditions;
@@ -1081,9 +1340,9 @@ async function buildAlertsReport(args) {
 }
 
 /** Active animals with zero emergency + zero routine doses (decision: who still needs vaccination) */
-async function buildUnvaccinatedAnimalsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId }) {
+async function buildUnvaccinatedAnimalsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId, ageMonths }) {
   const commonDateFilter = parseDateRange(from, to, 'created_at');
-  const idFilter = reportType === 'single' && singleId ? { animal_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'animal_id', false);
 
   const whereCondition = {
     ...idFilter,
@@ -1095,6 +1354,7 @@ async function buildUnvaccinatedAnimalsReport({ reportType, singleId, from, to, 
       status: status || 'Active',
       regFrom,
       regTo,
+      ageMonths,
     }),
   };
 
@@ -1142,7 +1402,7 @@ async function buildUnvaccinatedAnimalsReport({ reportType, singleId, from, to, 
 }
 
 /** Pending schedules that are overdue or due within riskDays (decision: act now) */
-async function buildOverdueVaccinationsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId, riskDays }) {
+async function buildOverdueVaccinationsReport({ reportType, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId, riskDays, ageMonths }) {
   const days = Number.isFinite(Number(riskDays)) ? Math.max(0, parseInt(riskDays, 10)) : 0;
   const now = new Date();
   const startOfToday = new Date(now);
@@ -1152,11 +1412,9 @@ async function buildOverdueVaccinationsReport({ reportType, singleId, from, to, 
   dueSoonEnd.setHours(23, 59, 59, 999);
 
   const dateFilter = parseDateRange(from, to, 'scheduled_date');
-  const idFilter = reportType === 'single' && singleId
-    ? { OR: [{ schedule_id: singleId }, { animal_id: singleId }] }
-    : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'schedule_id', true) || {};
 
-  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo });
+  const animalConditions = buildAnimalFilterConditions({ farmId, animalType, gender, status, regFrom, regTo, ageMonths });
   const userRange = dateFilter.scheduled_date || {};
   const riskLte = days > 0 ? dueSoonEnd : startOfToday;
   const lte =
@@ -1225,12 +1483,13 @@ async function buildOverdueVaccinationsReport({ reportType, singleId, from, to, 
 }
 
 /** Coverage % by farm (+ animal type / vaccine filter) for management decisions */
-async function buildVaccinationCoverageReport({ farmId, animalType, gender, status, vaccineId }) {
+async function buildVaccinationCoverageReport({ farmId, animalType, gender, status, vaccineId, ageMonths }) {
   const animalWhere = buildAnimalFilterConditions({
     farmId,
     animalType,
     gender,
     status: status || 'Active',
+    ageMonths,
   });
 
   const animals = await prisma.animal.findMany({
@@ -1314,7 +1573,7 @@ async function buildStockRiskReport({ reportType, singleId, from, to, vaccineId,
   soon.setHours(23, 59, 59, 999);
 
   const commonDateFilter = parseDateRange(from, to, 'purchase_date');
-  const idFilter = reportType === 'single' && singleId ? { stock_id: singleId } : {};
+  const idFilter = buildIdFilter(reportType, singleId, 'stock_id', false);
   const whereCondition = { ...idFilter, ...commonDateFilter };
   if (vaccineId) whereCondition.vaccine_id = vaccineId;
 
@@ -1378,12 +1637,143 @@ async function buildStockRiskReport({ reportType, singleId, from, to, vaccineId,
   return { columns, rows };
 }
 
+/** Decision charts: age-group coverage, top doctors, emergency vs routine */
+async function buildDecisionInsightsReport({ farmId, animalType, gender, status, ageMonths }) {
+  const animalWhere = buildAnimalFilterConditions({
+    farmId,
+    animalType,
+    gender,
+    status: status || 'Active',
+    ageMonths,
+  });
+
+  const animals = await prisma.animal.findMany({
+    where: animalWhere,
+    include: {
+      vaccinations: { select: { vaccination_id: true, administered_by: true } },
+      routineRecords: { select: { id: true, administered_by: true } },
+    },
+  });
+
+  const ageMap = new Map();
+  for (const a of animals) {
+    const age = Math.round(Number(a.age) || 0);
+    const isVacc = (a.vaccinations?.length || 0) + (a.routineRecords?.length || 0) > 0;
+    if (!ageMap.has(age)) {
+      ageMap.set(age, { name: `${age}`, vaccinated: 0, unvaccinated: 0, sortKey: age, total_animals: 0 });
+    }
+    const bucket = ageMap.get(age);
+    bucket.total_animals++;
+    if (isVacc) bucket.vaccinated++;
+    else bucket.unvaccinated++;
+  }
+  
+  const ageRows = Array.from(ageMap.values())
+    .sort((a, b) => a.sortKey - b.sortKey)
+    .map(g => {
+      return {
+        age_group: g.name,
+        total_animals: g.total_animals,
+        vaccinated: g.vaccinated,
+        unvaccinated: g.unvaccinated,
+        decision: g.total_animals === 0 ? 'No animals' : g.unvaccinated > g.vaccinated ? 'Prioritize this age group' : 'Coverage OK'
+      };
+    });
+
+  const hasAnimalFilter = Object.keys(animalWhere).length > 0;
+  const [emergencyRows, routineRows] = await Promise.all([
+    prisma.vaccination.findMany({
+      where: hasAnimalFilter ? { animal: animalWhere } : {},
+      include: {
+        user: { select: { user_id: true, full_name: true } },
+      },
+    }),
+    prisma.routineVaccinationRecord.findMany({
+      where: hasAnimalFilter ? { animal: animalWhere } : {},
+      include: {
+        administered_user: { select: { user_id: true, full_name: true } },
+      },
+    }),
+  ]);
+
+  const doctorUsers = await prisma.user.findMany({
+    where: { role: { equals: 'Doctor', mode: 'insensitive' }, is_active: true },
+    select: { user_id: true, full_name: true },
+    orderBy: { full_name: 'asc' },
+  });
+  const doctorMap = new Map(
+    doctorUsers.map((d) => [
+      d.user_id,
+      { doctor_id: d.user_id, doctor_name: d.full_name, emergency: 0, routine: 0, total: 0 },
+    ])
+  );
+  for (const v of emergencyRows) {
+    const id = v.user?.user_id || v.administered_by;
+    if (!doctorMap.has(id)) continue;
+    const d = doctorMap.get(id);
+    d.emergency += 1;
+    d.total += 1;
+  }
+  for (const r of routineRows) {
+    const id = r.administered_user?.user_id || r.administered_by;
+    if (!doctorMap.has(id)) continue;
+    const d = doctorMap.get(id);
+    d.routine += 1;
+    d.total += 1;
+  }
+
+  const topDoctors = [...doctorMap.values()]
+    .sort((a, b) => b.total - a.total || a.doctor_name.localeCompare(b.doctor_name));
+
+  const byType = [
+    { name: 'Emergency', value: emergencyRows.length },
+    { name: 'Routine', value: routineRows.length },
+  ];
+
+  const mostNeedyAge = [...ageRows]
+    .filter((r) => r.total_animals > 0)
+    .sort((a, b) => b.unvaccinated - a.unvaccinated)[0];
+
+  const columns = [
+    { key: 'age_group', label: 'Age Group' },
+    { key: 'total_animals', label: 'Animals' },
+    { key: 'vaccinated', label: 'Vaccinated' },
+    { key: 'unvaccinated', label: 'Unvaccinated' },
+    { key: 'decision', label: 'Decision' },
+  ];
+
+  return {
+    columns,
+    rows: ageRows,
+    insights: {
+      age_groups: ageRows.map((r) => ({
+        name: r.age_group,
+        vaccinated: r.vaccinated,
+        unvaccinated: r.unvaccinated,
+      })),
+      top_doctors: topDoctors.map((d) => ({
+        name: d.doctor_name,
+        total: d.total,
+        emergency: d.emergency,
+        routine: d.routine,
+      })),
+      by_vaccination_type: byType,
+      top_doctor_name: topDoctors[0]?.doctor_name || '—',
+      top_doctor_doses: topDoctors[0]?.total || 0,
+      emergency_total: emergencyRows.length,
+      routine_total: routineRows.length,
+      priority_age_group: mostNeedyAge?.age_group || '—',
+      priority_unvaccinated: mostNeedyAge?.unvaccinated || 0,
+    },
+  };
+}
+
 const getVaccinationReport = async (req, res) => {
   try {
     const moduleName = req.query.module || 'animals';
     const reportType = req.query.type || 'all'; // all | single | between
     const format = req.query.format || 'json'; // json | pdf
-    const singleId = req.query.single_id ? parseInt(req.query.single_id) : null;
+    const singleId = req.query.single_id || null;
     const from = req.query.from || null;
     const to = req.query.to || null;
     const farmId = req.query.farm_id ? parseInt(req.query.farm_id) : null;
@@ -1392,9 +1782,12 @@ const getVaccinationReport = async (req, res) => {
     const status = req.query.status || null;
     const regFrom = req.query.reg_from || null;
     const regTo = req.query.reg_to || null;
-    const vaccineId = req.query.vaccine_id ? parseInt(req.query.vaccine_id) : null;
+    const vaccineId = req.query.vaccine_id ? parseInt(req.query.vaccine_id, 10) : null;
     const riskDays = req.query.risk_days != null && req.query.risk_days !== ''
       ? parseInt(req.query.risk_days, 10)
+      : null;
+    const ageMonths = req.query.age != null && req.query.age !== ''
+      ? parseFloat(req.query.age)
       : null;
 
     const allowedModules = [
@@ -1406,6 +1799,7 @@ const getVaccinationReport = async (req, res) => {
       'emergency_vaccinations',
       'overdue_vaccinations',
       'vaccination_coverage',
+      'decision_insights',
       'farms',
       'stock',
       'stock_risk',
@@ -1440,6 +1834,7 @@ const getVaccinationReport = async (req, res) => {
       emergency_vaccinations: buildEmergencyVaccinationsReport,
       overdue_vaccinations: buildOverdueVaccinationsReport,
       vaccination_coverage: buildVaccinationCoverageReport,
+      decision_insights: buildDecisionInsightsReport,
       farms: buildFarmReport,
       stock: buildStockReport,
       stock_risk: buildStockRiskReport,
@@ -1449,7 +1844,7 @@ const getVaccinationReport = async (req, res) => {
       alerts: buildAlertsReport,
     };
 
-    let { columns, rows } = await builders[moduleName]({
+    let { columns, rows, insights } = await builders[moduleName]({
       reportType,
       singleId: scoped.singleId,
       from: scoped.from,
@@ -1462,9 +1857,16 @@ const getVaccinationReport = async (req, res) => {
       regTo,
       vaccineId,
       riskDays,
+      ageMonths,
     });
 
     const summary = buildReportSummary(moduleName, rows);
+    if (insights) {
+      summary.emergency_total = insights.emergency_total;
+      summary.routine_total = insights.routine_total;
+      summary.top_doctor_doses = insights.top_doctor_doses;
+      summary.priority_unvaccinated = insights.priority_unvaccinated;
+    }
 
     // Animal Registration should be about the animal itself.
     // Hide vaccination/dose summary columns (Emergency/Routine/Total Doses, Alerts, Schedules).
@@ -1480,27 +1882,187 @@ const getVaccinationReport = async (req, res) => {
     }
 
     if (format === 'pdf') {
-      const doc = new PDFDocument({ margin: 30, size: 'A4' });
+      const pageMargin = 36;
+      const footerReserve = 110;
+      const doc = new PDFDocument({
+        margin: pageMargin,
+        size: 'A4',
+        layout: 'landscape',
+        bufferPages: true,
+      });
       const fileName = `${moduleName}_report_${reportType}_${Date.now()}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       doc.pipe(res);
 
-      doc.fontSize(16).text('System Report', { align: 'left' });
-      doc.moveDown(0.3);
-      doc.fontSize(10).fillColor('#555').text(`Module: ${moduleName.toUpperCase()}`);
-      doc.text(`Type: ${reportType.toUpperCase()}`);
-      if (singleId) doc.text(`Single ID: #${singleId}`);
-      if (from || to) doc.text(`Range: ${from || '-'} to ${to || '-'}`);
-      doc.text(`Generated: ${new Date().toLocaleString()}`);
-      doc.text(`Rows: ${rows.length}`);
-      doc.moveDown(0.7).fillColor('#111');
+      const pageWidth = doc.page.width;
+      const contentWidth = pageWidth - pageMargin * 2;
+      const generatedAt = new Date();
+      const generatedAtText = generatedAt.toLocaleString();
+      const generatedBy = req.user?.name || 'System User';
+      const reportedBy = req.user?.role || req.user?.name || 'Staff';
+      const reportTitle = getPdfReportTitle(moduleName, reportType);
 
-      rows.forEach((r, idx) => {
-        const line = columns.map((c) => `${c.label}: ${toDisplayValue(r[c.key])}`).join(' | ');
-        doc.fontSize(8).text(`${idx + 1}. ${line}`);
-        if (doc.y > 760) doc.addPage();
-      });
+      // ---------- Header: logo + company name same line; project + report centered below ----------
+      const logoPath = path.join(
+        __dirname,
+        '../../../frontend/public/img/463865371_8646484958778270_5136213218242522965_n-removebg-preview.png'
+      );
+      const logoSize = 52;
+      const companyFontSize = 20;
+      // Logo PNG has transparent padding — pull company name closer to the visible circle
+      const companyGap = -4;
+      doc.font('Helvetica-Bold').fontSize(companyFontSize);
+      const companyWidth = doc.widthOfString(PDF_BRAND.centerName);
+      const headerBlockWidth = logoSize + companyGap + companyWidth;
+      const headerStartX = (pageWidth - headerBlockWidth) / 2;
+      const companyNameX = headerStartX + logoSize + companyGap;
+      let headerY = pageMargin;
+
+      try {
+        doc.image(logoPath, headerStartX, headerY, { width: logoSize, height: logoSize });
+      } catch (e) {
+        console.warn('Logo not found for PDF', e);
+      }
+
+      // Company name starts right beside the logo (user place)
+      const companyTextY = headerY + (logoSize / 2) - (companyFontSize * 0.35);
+      doc.font('Helvetica-Bold').fontSize(companyFontSize).fillColor('#0F172A')
+        .text(PDF_BRAND.centerName, companyNameX, companyTextY, {
+          width: companyWidth + 8,
+          lineBreak: false,
+        });
+
+      headerY = headerY + logoSize + 8;
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#334155')
+        .text(PDF_BRAND.systemName, pageMargin, headerY, { width: contentWidth, align: 'center' });
+      headerY = doc.y + 2;
+      doc.font('Helvetica-Bold').fontSize(13).fillColor('#0F172A')
+        .text(reportTitle, pageMargin, headerY, { width: contentWidth, align: 'center' });
+
+      // ---------- Metadata: Generated at (left) / Generated by (right) ----------
+      const metaY = doc.y + 14;
+      doc.font('Helvetica').fontSize(9).fillColor('#334155')
+        .text(`Generated at: ${generatedAtText}`, pageMargin, metaY, { width: contentWidth / 2, align: 'left' });
+      doc.font('Helvetica').fontSize(9).fillColor('#334155')
+        .text(`Generated by: ${generatedBy}`, pageMargin + contentWidth / 2, metaY, {
+          width: contentWidth / 2,
+          align: 'right',
+        });
+      doc.y = metaY + 18;
+
+      // ---------- Data table ----------
+      const tableHeaders = columns.map((c) => ({
+        label: c.label,
+        headerColor: PDF_BRAND.brandBlue,
+        headerOpacity: 1,
+        align: 'left',
+        headerAlign: 'left',
+      }));
+      const tableRows = rows.map((r) => columns.map((c) => toDisplayValue(r[c.key])));
+
+      try {
+        await doc.table(
+          { headers: tableHeaders, rows: tableRows },
+          {
+            prepareHeader: () => {
+              doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#FFFFFF');
+            },
+            prepareRow: (row, indexColumn, indexRow, rectRow) => {
+              if (indexColumn === 0) {
+                doc.addBackground(rectRow, indexRow % 2 ? '#F8FAFC' : '#FFFFFF');
+              }
+              doc.font('Helvetica').fontSize(7.5).fillColor('#0F172A');
+            },
+            x: pageMargin,
+            width: contentWidth,
+            padding: 4,
+            columnsSize: undefined,
+            margins: {
+              top: pageMargin,
+              bottom: footerReserve,
+              left: pageMargin,
+              right: pageMargin,
+            },
+          }
+        );
+      } catch (err) {
+        console.error('PDF Table Generation Error:', err);
+        doc.font('Helvetica').fontSize(10).fillColor('#EF4444')
+          .text('Unable to render report table.', pageMargin, doc.y + 10);
+      }
+
+      // ---------- Total count under table (e.g. Total: 3) ----------
+      const totalLineY = doc.y + 10;
+      const neededForTotal = totalLineY + 36;
+      const pageBottomLimit = doc.page.height - footerReserve;
+      if (neededForTotal > pageBottomLimit) {
+        doc.addPage();
+      }
+      const lineY = doc.y + 8;
+      doc.strokeColor('#334155').lineWidth(1.2);
+      doc.moveTo(pageMargin, lineY).lineTo(pageMargin + contentWidth, lineY).stroke();
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#0F172A')
+        .text(`Total: ${rows.length}`, pageMargin, lineY + 8, {
+          width: contentWidth,
+          align: 'right',
+        });
+      doc.y = lineY + 28;
+
+      // ---------- Signature / footer block on last page ----------
+      const drawSignatureFooter = (pageIndex) => {
+        doc.switchToPage(pageIndex);
+        const pageH = doc.page.height;
+        const pageW = doc.page.width;
+        const colWidth = 200;
+        const leftX = pageMargin;
+        const rightX = pageW - pageMargin - colWidth;
+        const lineY = pageH - 88;
+        const textY = lineY + 6;
+
+        doc.strokeColor('#94A3B8').lineWidth(0.8);
+        doc.moveTo(leftX, lineY).lineTo(leftX + colWidth, lineY).stroke();
+        doc.moveTo(rightX, lineY).lineTo(rightX + colWidth, lineY).stroke();
+
+        doc.font('Helvetica').fontSize(9).fillColor('#0F172A')
+          .text('Reported By: ', leftX, textY, { continued: true })
+          .font('Helvetica-Bold').text(String(reportedBy));
+        doc.font('Helvetica').fontSize(8).fillColor('#64748B')
+          .text(`Date: ${formatPdfLongDate(generatedAt)}`, leftX, textY + 14);
+
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#0F172A')
+          .text('Authorized Signature & Stamp', rightX, textY, { width: colWidth });
+        doc.font('Helvetica').fontSize(8).fillColor('#64748B')
+          .text(PDF_BRAND.authorizedTitle, rightX, textY + 14, { width: colWidth });
+
+        const contact = getPdfCenterContactLine();
+        const centerY = pageH - 42;
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#0F172A')
+          .text(PDF_BRAND.centerName, pageMargin, centerY, { width: contentWidth, align: 'center' });
+        if (contact) {
+          doc.font('Helvetica').fontSize(7.5).fillColor('#64748B')
+            .text(contact, pageMargin, centerY + 12, { width: contentWidth, align: 'center' });
+        }
+      };
+
+      const range = doc.bufferedPageRange();
+      const lastPageIndex = range.start + range.count - 1;
+      for (let i = range.start; i < range.start + range.count; i++) {
+        doc.switchToPage(i);
+        const isLast = i === lastPageIndex;
+        doc.fontSize(8).fillColor('#94A3B8').text(
+          `Page ${i - range.start + 1} of ${range.count}`,
+          pageMargin,
+          isLast ? doc.page.height - 18 : doc.page.height - 28,
+          {
+            width: isLast ? 120 : contentWidth,
+            align: isLast ? 'left' : 'center',
+            lineBreak: false,
+          }
+        );
+      }
+      // Signature block on the last page only (like the example)
+      drawSignatureFooter(lastPageIndex);
 
       doc.end();
       return;
@@ -1512,6 +2074,7 @@ const getVaccinationReport = async (req, res) => {
       generated_at: new Date().toISOString(),
       total_rows: rows.length,
       summary,
+      insights: insights || null,
       columns,
       rows,
     });

@@ -9,10 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { SearchIcon, PlusIcon, MoreHorizontalIcon, Loader2Icon, PrinterIcon, LayersIcon, EditIcon, TrashIcon } from 'lucide-react';
+import { SearchIcon, PlusIcon, MoreHorizontalIcon, Loader2Icon, PrinterIcon, LayersIcon, EditIcon, TrashIcon, AlertTriangleIcon, RefreshCwIcon, DownloadIcon, FilterIcon, ArrowDownUpIcon, LayoutGridIcon, SyringeIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon, DnaIcon, HeartIcon, ScaleIcon, MapPinIcon, ArrowRightIcon, BellIcon, CheckIcon, CalendarIcon } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
+import Swal from 'sweetalert2';
 import { canEdit, canDelete } from '@/lib/permissions';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 interface Farm {
   farm_id: number;
@@ -24,6 +28,7 @@ interface Animal {
   nickname?: string;
   animal_type: string;
   age: number;
+  date_of_birth?: string | null;
   weight?: number;
   biological_type?: string;
   is_pregnant?: boolean;
@@ -47,6 +52,10 @@ export default function AnimalTable() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingAnimalId, setEditingAnimalId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'latest' | 'oldest' | 'nameAsc' | 'nameDesc'>('latest');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [isVaccineDetailsOpen, setIsVaccineDetailsOpen] = useState(false);
+  const [selectedVaccineAnimal, setSelectedVaccineAnimal] = useState<any>(null);
 
   const [animals, setAnimals] = useState<Animal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,6 +63,8 @@ export default function AnimalTable() {
 
   const [isMortalityModalOpen, setIsMortalityModalOpen] = useState(false);
   const [mortalityAnimal, setMortalityAnimal] = useState<Animal | null>(null);
+  const [deleteAnimalTarget, setDeleteAnimalTarget] = useState<Animal | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [mortalityData, setMortalityData] = useState({
     death_date: new Date().toISOString().split('T')[0],
     cause_of_death: 'Vaccine Reaction',
@@ -65,10 +76,11 @@ export default function AnimalTable() {
     nickname: '',
     animal_type: '',
     age: '',
-    age_unit: 'months' as 'months' | 'years',
+    age_unit: 'years' as 'months' | 'years',
     weight: '',
     biological_type: '',
     is_pregnant: false,
+    pregnancy_start_date: '',
     status: 'Active',
     farm_id: ''
   });
@@ -132,15 +144,28 @@ export default function AnimalTable() {
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
+      const age_months = formData.age_unit === 'years'
+        ? Math.round(parseFloat(formData.age) * 12)
+        : (parseFloat(formData.age) || 0);
+
+      let minPregAge = 999;
+      if (formData.animal_type === 'Camel') minPregAge = 48;
+      else if (formData.animal_type === 'Cattle') minPregAge = 24;
+      else if (formData.animal_type === 'Goat') minPregAge = 18;
+
+      const isMale = formData.biological_type?.includes('Male');
+      const actual_is_pregnant = (!isMale && age_months >= minPregAge) 
+        ? formData.is_pregnant 
+        : false;
+
       const payload = {
         nickname: formData.nickname,
         animal_type: formData.animal_type,
-        age_months: formData.age_unit === 'years'
-          ? Math.round(parseFloat(formData.age) * 12)
-          : parseFloat(formData.age),
+        age_months: age_months,
         weight: formData.weight ? parseFloat(formData.weight) : null,
         biological_type: formData.biological_type,
-        is_pregnant: formData.is_pregnant,
+        is_pregnant: actual_is_pregnant,
+        pregnancy_start_date: formData.pregnancy_start_date || null,
         status: formData.status,
         farm_id: parseInt(formData.farm_id)
       };
@@ -164,11 +189,23 @@ export default function AnimalTable() {
           weight: '',
           biological_type: '',
           is_pregnant: false,
+          pregnancy_start_date: '',
           status: 'Active',
           farm_id: farms.length > 0 ? farms[0].farm_id.toString() : ''
         });
         fetchAnimals();
-        toast.success("Animal registered successfully");
+        Swal.fire({
+          icon: 'success',
+          title: 'Registration Successful!',
+          text: 'The new animal was registered successfully.',
+          confirmButtonColor: '#2563eb',
+          confirmButtonText: 'OK',
+          customClass: {
+            popup: '!rounded-3xl shadow-2xl pb-4',
+            title: 'font-extrabold text-slate-800',
+            confirmButton: 'rounded-xl font-medium px-8 py-2.5'
+          }
+        });
       } else {
         const err = await res.json();
         toast.error(`Error: ${err.error || 'Failed to save'}`);
@@ -196,6 +233,7 @@ export default function AnimalTable() {
         weight: formData.weight ? parseFloat(formData.weight) : null,
         biological_type: formData.biological_type,
         is_pregnant: formData.is_pregnant,
+        pregnancy_start_date: formData.pregnancy_start_date || null,
         status: formData.status,
         farm_id: parseInt(formData.farm_id)
       };
@@ -220,11 +258,23 @@ export default function AnimalTable() {
           weight: '',
           biological_type: '',
           is_pregnant: false,
+          pregnancy_start_date: '',
           status: 'Active',
           farm_id: farms.length > 0 ? farms[0].farm_id.toString() : ''
         });
         fetchAnimals();
-        toast.success("Animal updated successfully");
+        Swal.fire({
+          icon: 'success',
+          title: 'Update Successful!',
+          text: 'The animal details were updated successfully.',
+          confirmButtonColor: '#2563eb',
+          confirmButtonText: 'OK',
+          customClass: {
+            popup: '!rounded-3xl shadow-2xl pb-4',
+            title: 'font-extrabold text-slate-800',
+            confirmButton: 'rounded-xl font-medium px-8 py-2.5'
+          }
+        });
       } else {
         const err = await res.json();
         toast.error(`Error: ${err.error || 'Failed to update'}`);
@@ -276,6 +326,7 @@ export default function AnimalTable() {
       weight: animal.weight ? animal.weight.toString() : '',
       biological_type: animal.biological_type || '',
       is_pregnant: animal.is_pregnant || false,
+      pregnancy_start_date: animal.pregnancy_start_date ? animal.pregnancy_start_date.split('T')[0] : '',
       status: animal.status || 'Active',
       farm_id: animal.farm_id.toString()
     });
@@ -283,22 +334,30 @@ export default function AnimalTable() {
     setIsEditModalOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this animal?")) return;
+  const confirmDeleteAnimal = async () => {
+    if (!deleteAnimalTarget) return;
+    const animal = deleteAnimalTarget;
+    const label = animal.nickname?.trim() || formatAnimalID(animal.animal_type, animal.animal_id);
+    setIsDeleting(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:9999/api/animals/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:9999/api/animals/${animal.animal_id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        toast.success("Animal deleted successfully");
+      if (res.ok || res.status === 204) {
+        setDeleteAnimalTarget(null);
+        toast.success(`${label} deleted successfully`);
         fetchAnimals();
       } else {
-        toast.error("Failed to delete animal");
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to delete animal");
       }
     } catch (error) {
       console.error(error);
+      toast.error("Network error. Check that the backend is running.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -355,74 +414,177 @@ export default function AnimalTable() {
   const [role, setRole] = useState<string | null>(null);
 
   const filteredAnimals = animals.filter(animal => {
-    if (role === 'Doctor' && animal.status !== 'Active') return false;
-    return animal.nickname?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      animal.animal_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      animal.farm?.farm_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      animal.biological_type?.toLowerCase().includes(searchQuery.toLowerCase());
+    if (role === 'Doctor' && animal.status !== 'Active' && animal.status !== 'Completed') return false;
+    const lowerQuery = searchQuery.toLowerCase();
+    const formattedId = formatAnimalID(animal.animal_type, animal.animal_id).toLowerCase();
+    
+    return animal.nickname?.toLowerCase().includes(lowerQuery) ||
+      animal.animal_type?.toLowerCase().includes(lowerQuery) ||
+      animal.farm?.farm_name?.toLowerCase().includes(lowerQuery) ||
+      animal.biological_type?.toLowerCase().includes(lowerQuery) ||
+      formattedId.includes(lowerQuery) ||
+      animal.animal_id.toString().includes(lowerQuery);
   });
+
+  const sortedAnimals = [...filteredAnimals].sort((a, b) => {
+    if (sortBy === 'latest') return b.animal_id - a.animal_id;
+    if (sortBy === 'oldest') return a.animal_id - b.animal_id;
+    if (sortBy === 'nameAsc') return (a.nickname || '').localeCompare(b.nickname || '');
+    if (sortBy === 'nameDesc') return (b.nickname || '').localeCompare(a.nickname || '');
+    return 0;
+  });
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    doc.text("Livestock Directory", 14, 15);
+    
+    const tableColumn = ["ID", "Nickname", "Type", "Bio Type", "Age", "Status", "Farm", "Doses"];
+    const tableRows: any[] = [];
+
+    sortedAnimals.forEach(animal => {
+      const animalData = [
+        formatAnimalID(animal.animal_type, animal.animal_id),
+        animal.nickname || 'Unnamed',
+        animal.animal_type,
+        animal.biological_type || 'N/A',
+        animal.age ? `${Math.round(animal.age * 12)} mo` : 'N/A',
+        animal.status,
+        animal.farm?.farm_name || `Farm ${animal.farm_id}`,
+        (animal.total_doses ?? ((animal.vaccinations?.length || 0) + (animal.routineRecords?.length || 0))).toString()
+      ];
+      tableRows.push(animalData);
+    });
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 20,
+    });
+    doc.save(`livestock_directory_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const exportToExcel = () => {
+    const tableRows = sortedAnimals.map(animal => ({
+      ID: formatAnimalID(animal.animal_type, animal.animal_id),
+      Nickname: animal.nickname || 'Unnamed',
+      Type: animal.animal_type,
+      "Bio Type": animal.biological_type || 'N/A',
+      "Age (Months)": animal.age ? Math.round(animal.age * 12) : 'N/A',
+      Status: animal.status,
+      Farm: animal.farm?.farm_name || `Farm ${animal.farm_id}`,
+      Doses: (animal.total_doses ?? ((animal.vaccinations?.length || 0) + (animal.routineRecords?.length || 0)))
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(tableRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Animals");
+    XLSX.writeFile(workbook, `livestock_directory_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">Animals Directory</h2>
-          <p className="text-slate-500 mt-1.5 text-sm font-medium">Manage livestock records and health status.</p>
+          <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">Animals Directory</h2>
+          <p className="text-slate-500 mt-1 text-sm font-medium">Manage livestock records and health status.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={fetchAnimals} variant="outline" className="hidden sm:flex border-dashed bg-background shadow-xs hover:bg-muted/50 rounded-xl">
+          <Button onClick={fetchAnimals} variant="outline" className="hidden sm:flex border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 rounded-xl h-10 px-4 font-semibold text-sm">
+            <RefreshCwIcon className="w-4 h-4 mr-2" />
             Refresh
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="hidden sm:flex border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 rounded-xl h-10 px-4 font-semibold text-sm">
+                <DownloadIcon className="w-4 h-4 mr-2 text-blue-600" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-xl shadow-lg border-gray-100 bg-white z-[9999] min-w-[150px]">
+              <DropdownMenuItem onClick={exportToPDF} className="text-sm font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">
+                Export as PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportToExcel} className="text-sm font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">
+                Export as Excel
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {canEdit('Animals', role) && (
             <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-brand-primary hover:bg-brand-primary-hover text-white rounded-lg shadow-sm font-semibold px-4 h-9 text-xs border-none">
-                  <PlusIcon className="w-4 h-4 mr-1.5" />
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md font-semibold px-5 h-10 text-sm border-none">
+                  <PlusIcon className="w-4 h-4 mr-2" />
                   Add Animal
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[500px] rounded-[24px] border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] bg-white p-6">
               <form onSubmit={handleSave}>
                 <DialogHeader className="mb-4">
-                  <DialogTitle className="text-xl font-extrabold text-slate-800">Register New Animal</DialogTitle>
-                  <DialogDescription className="text-xs text-slate-500 font-medium">
-                    Enter the livestock details below to add them to the system.
-                  </DialogDescription>
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <PlusIcon className="w-6 h-6" />
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <DialogTitle className="text-xl font-extrabold text-slate-800">Register Vaccination Animal</DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500 font-medium mt-1">
+                        Enter the livestock details below to add them to the system.
+                      </DialogDescription>
+                    </div>
+                  </div>
                 </DialogHeader>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-5 py-6">
-                  <div className="col-span-2 space-y-2">
-                    <Label htmlFor="nickname" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Nickname</Label>
-                    <Input
-                      id="nickname"
-                      value={formData.nickname}
-                      onChange={e => setFormData({ ...formData, nickname: e.target.value })}
-                      placeholder="e.g. Cadey or Qamaerey"
-                      className="rounded-xl border-slate-200 focus-visible:ring-[#2FA4D7] h-11 bg-slate-50/50"
-                    />
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="nickname" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Nickname</Label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
+                      <Input
+                        id="nickname"
+                        value={formData.nickname}
+                        onChange={e => {
+                          const val = e.target.value
+                          if (/^[a-zA-Z\s]*$/.test(val)) {
+                            setFormData({ ...formData, nickname: val })
+                          }
+                        }}
+                        placeholder="e.g. Cadey or Qamaerey"
+                        className={`rounded-xl border-slate-200 focus-visible:ring-blue-600 h-11 bg-white shadow-sm pl-9 font-medium ${
+                          formData.nickname && !/^[a-zA-Z\s]+$/.test(formData.nickname)
+                            ? 'border-red-400 focus-visible:ring-red-400'
+                            : ''
+                        }`}
+                      />
+                    </div>
+                    {formData.nickname && !/^[a-zA-Z\s]+$/.test(formData.nickname) && (
+                      <p className="text-[11px] text-red-500 font-semibold mt-1 ml-1 flex items-center gap-1">
+                        <span>⚠</span> Only write letters
+                      </p>
+                    )}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Type</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Type</Label>
                     <Select value={formData.animal_type} onValueChange={v => setFormData({ ...formData, animal_type: v, biological_type: '' })}>
-                      <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
+                      <SelectTrigger className="w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9">
+                        <BellIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
-                        <SelectItem value="Camel" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Camel</SelectItem>
-                        <SelectItem value="Cattle" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Cattle</SelectItem>
-                        <SelectItem value="Goat" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Goat</SelectItem>
+                        <SelectItem value="Camel" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Camel</SelectItem>
+                        <SelectItem value="Cattle" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Cattle</SelectItem>
+                        <SelectItem value="Goat" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Goat</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Biological Type</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Biological Type</Label>
                     <Select value={formData.biological_type} onValueChange={v => {
                       const isMale = v.includes('Male');
                       setFormData({ ...formData, biological_type: v, is_pregnant: isMale ? false : formData.is_pregnant });
                     }}>
-                      <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
+                      <SelectTrigger className="w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9">
+                        <DnaIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
                         <SelectValue placeholder="Select bio type" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
@@ -430,31 +592,107 @@ export default function AnimalTable() {
                           formData.animal_type === 'Cattle' ? ['Sac (Female)', 'Dibi (Male)'] :
                           formData.animal_type === 'Camel' ? ['Nirig (Female)', 'Awr (Male)'] : []
                         ).map(t => (
-                           <SelectItem key={t} value={t} className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">{t}</SelectItem>
+                           <SelectItem key={t} value={t} className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">{t}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Pregnancy Status</Label>
-                    <Select 
-                      value={formData.is_pregnant ? 'Yes' : 'No'} 
-                      onValueChange={v => setFormData({ ...formData, is_pregnant: v === 'Yes' })}
-                      disabled={formData.biological_type?.includes('Male')}
-                    >
-                      <SelectTrigger className={`rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all ${formData.biological_type?.includes('Male') ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}>
-                        <SelectValue placeholder="Is pregnant?" />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
-                        <SelectItem value="No" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">No</SelectItem>
-                        <SelectItem value="Yes" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Yes</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Pregnancy Status</Label>
+                    {(() => {
+                      const ageMonths = formData.age ? (formData.age_unit === 'years' ? parseFloat(formData.age) * 12 : parseFloat(formData.age)) : 0;
+                      let minPregAge = 999;
+                      let durationText = '';
+                      if (formData.animal_type === 'Camel') { minPregAge = 48; durationText = 'Uurkas waxay sidesa 13 bilood ama 1 sano'; }
+                      else if (formData.animal_type === 'Cattle') { minPregAge = 24; durationText = 'Uurkas waxay sidesa 9 bilood'; }
+                      else if (formData.animal_type === 'Goat') { minPregAge = 18; durationText = 'Uurkas waxay sidesa 5 bilood'; }
+
+                      const isMale = formData.biological_type?.includes('Male');
+                      const isTooYoung = !isMale && ageMonths > 0 && ageMonths < minPregAge;
+                      const isDisabled = isMale || isTooYoung || !formData.biological_type;
+
+                      return (
+                        <div className="flex flex-col space-y-1.5">
+                          <Select 
+                            value={formData.is_pregnant && !isTooYoung && !isMale ? 'Yes' : 'No'} 
+                            onValueChange={v => setFormData({ ...formData, is_pregnant: v === 'Yes' })}
+                            disabled={isDisabled}
+                          >
+                            <SelectTrigger className={`w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}>
+                              <HeartIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
+                              <SelectValue placeholder="Is pregnant?" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
+                              <SelectItem value="No" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">No</SelectItem>
+                              <SelectItem value="Yes" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Yes</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {!isMale && formData.biological_type && isTooYoung && (
+                            <p className="text-[10px] ml-1 leading-tight text-slate-500">
+                              <span className="text-amber-500 font-medium">
+                                Lama ogola (Ugu yaraan: {formData.age_unit === 'years' ? `${minPregAge / 12} sano` : `${minPregAge} bilood`}).
+                              </span>
+                            </p>
+                          )}
+                          {!isMale && formData.is_pregnant && formData.pregnancy_start_date && !isTooYoung && (
+                            <p className="text-[10px] ml-1 leading-tight mt-1">
+                              {(() => {
+                                const start = new Date(formData.pregnancy_start_date);
+                                if (isNaN(start.getTime())) return null;
+                                const monthsPregnant = (Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+                                if (monthsPregnant < 0) return <span className="text-amber-500 font-medium">Mustaqbalka ma noqon karto.</span>;
+                                
+                                let totalDuration = 0;
+                                if (formData.animal_type === 'Camel') totalDuration = 13;
+                                else if (formData.animal_type === 'Cattle') totalDuration = 9;
+                                else if (formData.animal_type === 'Goat') totalDuration = 5;
+
+                                const passed = monthsPregnant.toFixed(1);
+                                const remaining = (totalDuration - monthsPregnant).toFixed(1);
+
+                                if (monthsPregnant >= totalDuration) return <span className="text-emerald-600 font-medium">Wakhtigii waa la gaaray (Waxay sidday {passed} bilood).</span>;
+                                return <span className="text-blue-600 font-medium">Uurka: {passed} bilood ayaa dhammaaday. U dhiman {remaining} bilood.</span>;
+                              })()}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  <div className="col-span-2 space-y-2">
-                    <Label htmlFor="age" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Age</Label>
+                  {(() => {
+                    const ageMonths = formData.age ? (formData.age_unit === 'years' ? parseFloat(formData.age) * 12 : parseFloat(formData.age)) : 0;
+                    let minPregAge = 999;
+                    if (formData.animal_type === 'Camel') minPregAge = 48;
+                    else if (formData.animal_type === 'Cattle') minPregAge = 24;
+                    else if (formData.animal_type === 'Goat') minPregAge = 18;
+                    const isMale = formData.biological_type?.includes('Male');
+                    const isTooYoung = !isMale && ageMonths > 0 && ageMonths < minPregAge;
+
+                    if (formData.is_pregnant && !isTooYoung && !isMale) {
+                      return (
+                        <div className="space-y-1.5 transition-all duration-300">
+                          <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Expected Date</Label>
+                          <div className="relative">
+                            <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600 pointer-events-none" />
+                            <Input
+                              type="date"
+                              required
+                              value={formData.pregnancy_start_date || ''}
+                              onChange={e => setFormData({ ...formData, pregnancy_start_date: e.target.value })}
+                              className="rounded-xl border-slate-200 h-11 bg-white shadow-sm w-full font-medium focus-visible:ring-blue-600 pl-9"
+                              title="Pregnancy Start Date (or Last Mating Date)"
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
+                    return <div className="hidden sm:block" />;
+                  })()}
+
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="age" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Age</Label>
                     <div className="flex gap-2 items-center">
                       <Input
                         id="age"
@@ -468,37 +706,49 @@ export default function AnimalTable() {
                         max={formData.age_unit === 'months' ? 180 : 15}
                         required
                         value={formData.age}
-                        onChange={e => setFormData({ ...formData, age: e.target.value })}
+                        onKeyDown={e => {
+                          // Allow: backspace, delete, tab, arrows, home, end
+                          const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End']
+                          if (allowed.includes(e.key)) return
+                          // Allow decimal point (only if not already present)
+                          if (e.key === '.' && !formData.age.includes('.')) return
+                          // Block anything that is not a digit
+                          if (!/^\d$/.test(e.key)) e.preventDefault()
+                        }}
+                        onChange={e => {
+                          const val = e.target.value
+                          // Allow digits and a single decimal point
+                          if (/^\d*\.?\d*$/.test(val)) {
+                            setFormData({ ...formData, age: val })
+                          }
+                        }}
                         placeholder={formData.age_unit === 'months'
                           ? (formData.animal_type === 'Goat' ? 'e.g. 3' : formData.animal_type === 'Cattle' ? 'e.g. 4' : formData.animal_type === 'Camel' ? 'e.g. 6' : 'e.g. 12')
                           : 'e.g. 2'
                         }
-                        className="rounded-xl border-slate-200 h-11 bg-slate-50/50 flex-1"
+                        className="rounded-xl border-slate-200 h-11 bg-white shadow-sm flex-1 font-medium"
                       />
-                      <div className="flex rounded-xl border border-slate-200 overflow-hidden h-11">
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, age_unit: 'months', age: '' })}
-                          className={`px-3 text-xs font-bold transition-all ${
-                            formData.age_unit === 'months'
-                              ? 'bg-[#2FA4D7] text-white'
-                              : 'bg-white text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          Months
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, age_unit: 'years', age: '' })}
-                          className={`px-3 text-xs font-bold transition-all border-l border-slate-200 ${
-                            formData.age_unit === 'years'
-                              ? 'bg-[#2FA4D7] text-white'
-                              : 'bg-white text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          Years
-                        </button>
-                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="outline" className="h-11 w-11 p-0 rounded-xl border-slate-200 shrink-0 shadow-sm bg-white hover:bg-slate-50 transition-colors">
+                            <MoreHorizontalIcon className="w-5 h-5 text-slate-500" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="rounded-xl border-slate-200 shadow-xl w-32 bg-white">
+                          <DropdownMenuItem 
+                            onClick={() => setFormData({ ...formData, age_unit: 'months', age: '' })}
+                            className={`rounded-lg m-1 cursor-pointer font-medium py-2 ${formData.age_unit === 'months' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100'}`}
+                          >
+                            Months {formData.age_unit === 'months' && <CheckIcon className="w-4 h-4 ml-auto" />}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => setFormData({ ...formData, age_unit: 'years', age: '' })}
+                            className={`rounded-lg m-1 cursor-pointer font-medium py-2 ${formData.age_unit === 'years' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100'}`}
+                          >
+                            Years {formData.age_unit === 'years' && <CheckIcon className="w-4 h-4 ml-auto" />}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     {formData.animal_type && (
                       <p className="text-[10px] text-slate-400 ml-1">
@@ -510,20 +760,45 @@ export default function AnimalTable() {
                     )}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="weight" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Weight (kg)</Label>
-                    <Input id="weight" type="number" step="0.1" value={formData.weight} onChange={e => setFormData({ ...formData, weight: e.target.value })} placeholder="e.g. 50.5" className="rounded-xl border-slate-200 h-11 bg-slate-50/50" />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="weight" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Weight (kg)</Label>
+                    <div className="relative">
+                      <ScaleIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
+                      <Input
+                        id="weight"
+                        type="number"
+                        step="0.1"
+                        value={formData.weight}
+                        onKeyDown={e => {
+                          const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End']
+                          if (allowed.includes(e.key)) return
+                          // Allow decimal point only if not already present
+                          if (e.key === '.' && !formData.weight.includes('.')) return
+                          // Block anything that is not a digit
+                          if (!/^\d$/.test(e.key)) e.preventDefault()
+                        }}
+                        onChange={e => {
+                          const val = e.target.value
+                          if (/^\d*\.?\d*$/.test(val)) {
+                            setFormData({ ...formData, weight: val })
+                          }
+                        }}
+                        placeholder="e.g. 50.5"
+                        className="rounded-xl border-slate-200 h-11 bg-white shadow-sm pl-9 font-medium"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="farm" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Farm Location</Label>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="farm" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Farm Location</Label>
                     <Select value={formData.farm_id} onValueChange={v => setFormData({ ...formData, farm_id: v })}>
-                      <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
+                      <SelectTrigger className="w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9">
+                        <MapPinIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
                         <SelectValue placeholder="Choose farm" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
                         {farms.map(farm => (
-                          <SelectItem key={farm.farm_id} value={farm.farm_id.toString()} className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">
+                          <SelectItem key={farm.farm_id} value={farm.farm_id.toString()} className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">
                             {farm.farm_name}
                           </SelectItem>
                         ))}
@@ -532,10 +807,15 @@ export default function AnimalTable() {
                   </div>
                 </div>
                 <DialogFooter className="mt-8 gap-3">
-                  <Button type="button" variant="ghost" onClick={() => setIsAddModalOpen(false)} disabled={isSaving} className="rounded-xl border-slate-200">Cancel</Button>
-                  <Button type="submit" disabled={isSaving} className="bg-[#2FA4D7] hover:bg-[#2FA4D7]/90 text-white rounded-xl px-8 shadow-lg shadow-[#2FA4D7]/20">
-                    {isSaving && <Loader2Icon className="w-4 h-4 mr-2 animate-spin" />}
+                  <Button type="button" variant="ghost" onClick={() => setIsAddModalOpen(false)} disabled={isSaving} className="rounded-xl border-slate-200 text-sm font-semibold h-11">Cancel</Button>
+                  <Button
+                    type="submit"
+                    disabled={isSaving || !!(formData.nickname && !/^[a-zA-Z\s]+$/.test(formData.nickname))}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-6 shadow-md text-sm font-semibold h-11 flex items-center justify-center"
+                  >
+                    {isSaving ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : null}
                     Register Animal
+                    {!isSaving && <ArrowRightIcon className="w-4 h-4 ml-2" />}
                   </Button>
                 </DialogFooter>
               </form>
@@ -548,44 +828,56 @@ export default function AnimalTable() {
               <DialogContent className="sm:max-w-[500px] rounded-[24px] border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] bg-white p-6">
               <form onSubmit={handleEditSave}>
                 <DialogHeader className="mb-4">
-                  <DialogTitle className="text-xl font-extrabold text-slate-800">Edit Animal</DialogTitle>
-                  <DialogDescription className="text-xs text-slate-500 font-medium">
-                    Update the livestock details below.
-                  </DialogDescription>
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <EditIcon className="w-6 h-6" />
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <DialogTitle className="text-xl font-extrabold text-slate-800">Edit Animal</DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500 font-medium mt-1">
+                        Update the livestock details below.
+                      </DialogDescription>
+                    </div>
+                  </div>
                 </DialogHeader>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-5 py-6">
-                  <div className="col-span-2 space-y-2">
-                    <Label htmlFor="edit_nickname" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Nickname</Label>
-                    <Input
-                      id="edit_nickname"
-                      value={formData.nickname}
-                      onChange={e => setFormData({ ...formData, nickname: e.target.value })}
-                      placeholder="e.g. Cadey or Qamaerey"
-                      className="rounded-xl border-slate-200 focus-visible:ring-[#2FA4D7] h-11 bg-slate-50/50"
-                    />
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="edit_nickname" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Nickname</Label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
+                      <Input
+                        id="edit_nickname"
+                        value={formData.nickname}
+                        onChange={e => setFormData({ ...formData, nickname: e.target.value })}
+                        placeholder="e.g. Cadey or Qamaerey"
+                        className="rounded-xl border-slate-200 focus-visible:ring-blue-600 h-11 bg-white shadow-sm pl-9 font-medium"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Type</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Animal Type</Label>
                     <Select value={formData.animal_type} onValueChange={v => setFormData({ ...formData, animal_type: v, biological_type: '' })}>
-                      <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
+                      <SelectTrigger className="w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9">
+                        <BellIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
-                        <SelectItem value="Camel" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Camel</SelectItem>
-                        <SelectItem value="Cattle" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Cattle</SelectItem>
-                        <SelectItem value="Goat" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Goat</SelectItem>
+                        <SelectItem value="Camel" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Camel</SelectItem>
+                        <SelectItem value="Cattle" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Cattle</SelectItem>
+                        <SelectItem value="Goat" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Goat</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Biological Type</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Biological Type</Label>
                     <Select value={formData.biological_type} onValueChange={v => {
                       const isMale = v.includes('Male');
                       setFormData({ ...formData, biological_type: v, is_pregnant: isMale ? false : formData.is_pregnant });
                     }}>
-                      <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
+                      <SelectTrigger className="w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9">
+                        <DnaIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
                         <SelectValue placeholder="Select bio type" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
@@ -593,31 +885,107 @@ export default function AnimalTable() {
                           formData.animal_type === 'Cattle' ? ['Sac (Female)', 'Dibi (Male)'] :
                           formData.animal_type === 'Camel' ? ['Nirig (Female)', 'Awr (Male)'] : []
                         ).map(t => (
-                           <SelectItem key={t} value={t} className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">{t}</SelectItem>
+                           <SelectItem key={t} value={t} className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">{t}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Pregnancy Status</Label>
-                    <Select 
-                      value={formData.is_pregnant ? 'Yes' : 'No'} 
-                      onValueChange={v => setFormData({ ...formData, is_pregnant: v === 'Yes' })}
-                      disabled={formData.biological_type?.includes('Male')}
-                    >
-                      <SelectTrigger className={`rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all ${formData.biological_type?.includes('Male') ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}>
-                        <SelectValue placeholder="Is pregnant?" />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
-                        <SelectItem value="No" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">No</SelectItem>
-                        <SelectItem value="Yes" className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">Yes</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Pregnancy Status</Label>
+                    {(() => {
+                      const ageMonths = formData.age ? (formData.age_unit === 'years' ? parseFloat(formData.age) * 12 : parseFloat(formData.age)) : 0;
+                      let minPregAge = 999;
+                      let durationText = '';
+                      if (formData.animal_type === 'Camel') { minPregAge = 48; durationText = 'Uurkas waxay sidesa 13 bilood ama 1 sano'; }
+                      else if (formData.animal_type === 'Cattle') { minPregAge = 24; durationText = 'Uurkas waxay sidesa 9 bilood'; }
+                      else if (formData.animal_type === 'Goat') { minPregAge = 18; durationText = 'Uurkas waxay sidesa 5 bilood'; }
+
+                      const isMale = formData.biological_type?.includes('Male');
+                      const isTooYoung = !isMale && ageMonths > 0 && ageMonths < minPregAge;
+                      const isDisabled = isMale || isTooYoung || !formData.biological_type;
+
+                      return (
+                        <div className="flex flex-col space-y-1.5">
+                          <Select 
+                            value={formData.is_pregnant && !isTooYoung && !isMale ? 'Yes' : 'No'} 
+                            onValueChange={v => setFormData({ ...formData, is_pregnant: v === 'Yes' })}
+                            disabled={isDisabled}
+                          >
+                            <SelectTrigger className={`w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}>
+                              <HeartIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
+                              <SelectValue placeholder="Is pregnant?" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
+                              <SelectItem value="No" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">No</SelectItem>
+                              <SelectItem value="Yes" className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">Yes</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {!isMale && formData.biological_type && isTooYoung && (
+                            <p className="text-[10px] ml-1 leading-tight text-slate-500">
+                              <span className="text-amber-500 font-medium">
+                                Lama ogola (Ugu yaraan: {formData.age_unit === 'years' ? `${minPregAge / 12} sano` : `${minPregAge} bilood`}).
+                              </span>
+                            </p>
+                          )}
+                          {!isMale && formData.is_pregnant && formData.pregnancy_start_date && !isTooYoung && (
+                            <p className="text-[10px] ml-1 leading-tight mt-1">
+                              {(() => {
+                                const start = new Date(formData.pregnancy_start_date);
+                                if (isNaN(start.getTime())) return null;
+                                const monthsPregnant = (Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+                                if (monthsPregnant < 0) return <span className="text-amber-500 font-medium">Mustaqbalka ma noqon karto.</span>;
+                                
+                                let totalDuration = 0;
+                                if (formData.animal_type === 'Camel') totalDuration = 13;
+                                else if (formData.animal_type === 'Cattle') totalDuration = 9;
+                                else if (formData.animal_type === 'Goat') totalDuration = 5;
+
+                                const passed = monthsPregnant.toFixed(1);
+                                const remaining = (totalDuration - monthsPregnant).toFixed(1);
+
+                                if (monthsPregnant >= totalDuration) return <span className="text-emerald-600 font-medium">Wakhtigii waa la gaaray (Waxay sidday {passed} bilood).</span>;
+                                return <span className="text-blue-600 font-medium">Uurka: {passed} bilood ayaa dhammaaday. U dhiman {remaining} bilood.</span>;
+                              })()}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  <div className="col-span-2 space-y-2">
-                    <Label htmlFor="edit_age" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Age</Label>
+                  {(() => {
+                    const ageMonths = formData.age ? (formData.age_unit === 'years' ? parseFloat(formData.age) * 12 : parseFloat(formData.age)) : 0;
+                    let minPregAge = 999;
+                    if (formData.animal_type === 'Camel') minPregAge = 48;
+                    else if (formData.animal_type === 'Cattle') minPregAge = 24;
+                    else if (formData.animal_type === 'Goat') minPregAge = 18;
+                    const isMale = formData.biological_type?.includes('Male');
+                    const isTooYoung = !isMale && ageMonths > 0 && ageMonths < minPregAge;
+
+                    if (formData.is_pregnant && !isTooYoung && !isMale) {
+                      return (
+                        <div className="space-y-1.5 transition-all duration-300">
+                          <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Expected Date</Label>
+                          <div className="relative">
+                            <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600 pointer-events-none" />
+                            <Input
+                              type="date"
+                              required
+                              value={formData.pregnancy_start_date || ''}
+                              onChange={e => setFormData({ ...formData, pregnancy_start_date: e.target.value })}
+                              className="rounded-xl border-slate-200 h-11 bg-white shadow-sm w-full font-medium focus-visible:ring-blue-600 pl-9"
+                              title="Pregnancy Start Date (or Last Mating Date)"
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
+                    return <div className="hidden sm:block" />;
+                  })()}
+
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="edit_age" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Age</Label>
                     <div className="flex gap-2 items-center">
                       <Input
                         id="edit_age"
@@ -636,32 +1004,29 @@ export default function AnimalTable() {
                           ? (formData.animal_type === 'Goat' ? 'e.g. 3' : formData.animal_type === 'Cattle' ? 'e.g. 4' : formData.animal_type === 'Camel' ? 'e.g. 6' : 'e.g. 12')
                           : 'e.g. 2'
                         }
-                        className="rounded-xl border-slate-200 h-11 bg-slate-50/50 flex-1"
+                        className="rounded-xl border-slate-200 h-11 bg-white shadow-sm flex-1 font-medium"
                       />
-                      <div className="flex rounded-xl border border-slate-200 overflow-hidden h-11">
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, age_unit: 'months', age: '' })}
-                          className={`px-3 text-xs font-bold transition-all ${
-                            formData.age_unit === 'months'
-                              ? 'bg-[#2FA4D7] text-white'
-                              : 'bg-white text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          Months
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, age_unit: 'years', age: '' })}
-                          className={`px-3 text-xs font-bold transition-all border-l border-slate-200 ${
-                            formData.age_unit === 'years'
-                              ? 'bg-[#2FA4D7] text-white'
-                              : 'bg-white text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          Years
-                        </button>
-                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="outline" className="h-11 w-11 p-0 rounded-xl border-slate-200 shrink-0 shadow-sm bg-white hover:bg-slate-50 transition-colors">
+                            <MoreHorizontalIcon className="w-5 h-5 text-slate-500" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="rounded-xl border-slate-200 shadow-xl w-32 bg-white">
+                          <DropdownMenuItem 
+                            onClick={() => setFormData({ ...formData, age_unit: 'months', age: '' })}
+                            className={`rounded-lg m-1 cursor-pointer font-medium py-2 ${formData.age_unit === 'months' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100'}`}
+                          >
+                            Months {formData.age_unit === 'months' && <CheckIcon className="w-4 h-4 ml-auto" />}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => setFormData({ ...formData, age_unit: 'years', age: '' })}
+                            className={`rounded-lg m-1 cursor-pointer font-medium py-2 ${formData.age_unit === 'years' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100'}`}
+                          >
+                            Years {formData.age_unit === 'years' && <CheckIcon className="w-4 h-4 ml-auto" />}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     {formData.animal_type && (
                       <p className="text-[10px] text-slate-400 ml-1">
@@ -672,21 +1037,24 @@ export default function AnimalTable() {
                       </p>
                     )}
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_weight" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Weight (kg)</Label>
-                    <Input id="edit_weight" type="number" step="0.1" value={formData.weight} onChange={e => setFormData({ ...formData, weight: e.target.value })} placeholder="e.g. 50.5" className="rounded-xl border-slate-200 h-11 bg-slate-50/50" />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit_weight" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Weight (kg)</Label>
+                    <div className="relative">
+                      <ScaleIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
+                      <Input id="edit_weight" type="number" step="0.1" value={formData.weight} onChange={e => setFormData({ ...formData, weight: e.target.value })} placeholder="e.g. 50.5" className="rounded-xl border-slate-200 h-11 bg-white shadow-sm pl-9 font-medium" />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_farm" className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Farm Location</Label>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit_farm" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 ml-1">Farm Location</Label>
                     <Select value={formData.farm_id} onValueChange={v => setFormData({ ...formData, farm_id: v })}>
-                      <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
+                      <SelectTrigger className="w-full relative rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-blue-600 transition-all pl-9">
+                        <MapPinIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" />
                         <SelectValue placeholder="Choose farm" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
                         {farms.map(farm => (
-                          <SelectItem key={farm.farm_id} value={farm.farm_id.toString()} className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">
+                          <SelectItem key={farm.farm_id} value={farm.farm_id.toString()} className="rounded-lg m-1 cursor-pointer hover:bg-blue-600/10 focus:bg-blue-600/10 focus:text-blue-600 py-2.5 transition-colors font-medium">
                             {farm.farm_name}
                           </SelectItem>
                         ))}
@@ -695,10 +1063,11 @@ export default function AnimalTable() {
                   </div>
                 </div>
                 <DialogFooter className="mt-8 gap-3">
-                  <Button type="button" variant="ghost" onClick={() => setIsEditModalOpen(false)} disabled={isSaving} className="rounded-xl border-slate-200">Cancel</Button>
-                  <Button type="submit" disabled={isSaving} className="bg-[#2FA4D7] hover:bg-[#2FA4D7]/90 text-white rounded-xl px-8 shadow-lg shadow-[#2FA4D7]/20">
-                    {isSaving && <Loader2Icon className="w-4 h-4 mr-2 animate-spin" />}
+                  <Button type="button" variant="ghost" onClick={() => setIsEditModalOpen(false)} disabled={isSaving} className="rounded-xl border-slate-200 text-sm font-semibold h-11">Cancel</Button>
+                  <Button type="submit" disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 shadow-md text-sm font-semibold h-11 flex items-center justify-center">
+                    {isSaving ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : null}
                     Update Animal
+                    {!isSaving && <ArrowRightIcon className="w-4 h-4 ml-2" />}
                   </Button>
                 </DialogFooter>
               </form>
@@ -748,122 +1117,207 @@ export default function AnimalTable() {
               </DialogContent>
             </Dialog>
           )}
+
+          <Dialog
+            open={!!deleteAnimalTarget}
+            onOpenChange={(open) => {
+              if (!open && !isDeleting) setDeleteAnimalTarget(null);
+            }}
+          >
+            <DialogContent className="sm:max-w-[420px] rounded-[24px] border-none shadow-[0_20px_50px_-12px_rgba(15,23,42,0.25)] bg-white p-0 overflow-hidden">
+              <div className="bg-gradient-to-br from-rose-50 via-white to-slate-50 px-6 pt-6 pb-4">
+                <div className="w-14 h-14 rounded-2xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center mb-4 shadow-sm">
+                  <AlertTriangleIcon className="w-7 h-7" />
+                </div>
+                <DialogHeader className="space-y-2 text-left">
+                  <DialogTitle className="text-xl font-extrabold tracking-tight text-slate-900">
+                    Delete this animal?
+                  </DialogTitle>
+                  <DialogDescription className="text-sm text-slate-500 font-medium leading-relaxed">
+                    You are about to permanently remove{" "}
+                    <span className="inline-flex items-center rounded-full bg-slate-900 text-white text-xs font-bold px-2.5 py-0.5 mx-0.5">
+                      {deleteAnimalTarget
+                        ? deleteAnimalTarget.nickname?.trim() ||
+                          formatAnimalID(deleteAnimalTarget.animal_type, deleteAnimalTarget.animal_id)
+                        : ""}
+                    </span>{" "}
+                    from the directory.
+                  </DialogDescription>
+                </DialogHeader>
+              </div>
+
+              <div className="px-6 py-4">
+                <div className="rounded-2xl border border-rose-100 bg-rose-50/80 px-4 py-3 text-[13px] text-rose-800 leading-relaxed">
+                  Vaccination history, alerts, and schedules for this animal will also be removed. This action cannot be undone.
+                </div>
+              </div>
+
+              <DialogFooter className="px-6 pb-6 gap-2 sm:gap-3 sm:justify-stretch">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isDeleting}
+                  onClick={() => setDeleteAnimalTarget(null)}
+                  className="flex-1 rounded-xl h-11 border-slate-200 bg-white text-slate-700 font-semibold hover:bg-slate-50"
+                >
+                  Keep animal
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={confirmDeleteAnimal}
+                  className="flex-1 rounded-xl h-11 bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-lg shadow-rose-600/20"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2Icon className="w-4 h-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <TrashIcon className="w-4 h-4 mr-2" />
+                      Yes, delete
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
 
       {/* Main Table Card */}
       <Card className="rounded-[20px] border-none shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] bg-white overflow-hidden">
-        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-gray-50 p-6 bg-white">
-          <div className="flex items-center gap-3">
-             <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 border-b border-gray-50 p-6 bg-white">
+          <div className="flex items-center gap-4">
+             <div className="w-12 h-12 rounded-[14px] bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm">
                 <LayersIcon className="w-6 h-6" />
              </div>
-             <div className="flex flex-col space-y-0.5">
-               <CardTitle className="text-base font-extrabold text-slate-800">Animal Directory</CardTitle>
-               <CardDescription className="text-[11px] text-slate-500 font-medium mt-0.5">A complete timeline of registered livestock.</CardDescription>
+             <div className="flex flex-col">
+               <CardTitle className="text-lg font-extrabold text-slate-800">Animal Directory</CardTitle>
+               <CardDescription className="text-xs text-slate-500 font-medium mt-1">A complete timeline of registered livestock.</CardDescription>
              </div>
           </div>
-          <div className="relative w-full sm:w-72 group mt-4 sm:mt-0">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 transition-colors group-focus-within:text-blue-500" />
+        </CardHeader>
+
+        {/* Toolbar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 border-b border-gray-50 bg-white gap-4">
+          <div className="flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="rounded-xl border-gray-200 h-9 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-sm">
+                  <ArrowDownUpIcon className="w-3.5 h-3.5 mr-2 text-gray-400" /> Sort: {sortBy === 'latest' ? 'Latest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'nameAsc' ? 'Name (A-Z)' : 'Name (Z-A)'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="rounded-xl shadow-lg border-gray-100 min-w-[160px] bg-white z-[9999]">
+                <DropdownMenuItem onClick={() => setSortBy('latest')} className="text-xs font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">Latest Registered</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy('oldest')} className="text-xs font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">Oldest Registered</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy('nameAsc')} className="text-xs font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">Name (A-Z)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy('nameDesc')} className="text-xs font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">Name (Z-A)</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="rounded-xl border-gray-200 h-9 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-sm">
+                  <LayoutGridIcon className="w-3.5 h-3.5 mr-2 text-gray-400" /> View: {viewMode === 'table' ? 'Table' : 'Grid'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="rounded-xl shadow-lg border-gray-100 min-w-[120px] bg-white z-[9999]">
+                <DropdownMenuItem onClick={() => setViewMode('table')} className="text-xs font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">Table View</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setViewMode('grid')} className="text-xs font-medium cursor-pointer py-2 hover:bg-gray-50 focus:bg-gray-50">Grid View</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div className="relative w-full sm:w-[320px] group">
+            <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 transition-colors group-focus-within:text-blue-500" />
             <Input
               placeholder="Search by code, nickname, type..."
-              className="pl-9 rounded-xl h-10 bg-gray-50/50 border border-gray-200 text-xs font-medium focus-visible:ring-blue-500 transition-all"
+              className="pl-11 rounded-xl h-10 bg-white border border-gray-200 text-sm font-medium focus-visible:ring-blue-500 transition-all shadow-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-        </CardHeader>
+        </div>
+
         <CardContent className="p-0">
-          <Table>
-            <TableHeader className="bg-gray-50/50">
-              <TableRow className="hover:bg-transparent border-b border-gray-50">
-                <TableHead className="w-[120px] font-bold text-[10px] text-slate-400 uppercase tracking-widest pl-6 h-11">ID</TableHead>
-                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Nickname & Type</TableHead>
-                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11 hidden md:table-cell">Bio Type & Age</TableHead>
-                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Status</TableHead>
-                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Farm</TableHead>
-                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Vaccines</TableHead>
-                <TableHead className="text-right pr-6 h-11 w-[120px] font-bold text-[10px] text-slate-400 uppercase tracking-widest">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {viewMode === 'grid' ? (
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 bg-gray-50/30">
               {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center">
-                    <div className="flex flex-col items-center justify-center text-muted-foreground">
-                      <Loader2Icon className="h-8 w-8 mb-2 animate-spin opacity-50 text-[#2FA4D7]" />
-                      <p>Loading records...</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : filteredAnimals.length > 0 ? (
-                filteredAnimals.map((animal) => (
-                  <TableRow key={animal.animal_id} className="cursor-pointer hover:bg-slate-50 transition-colors border-b border-gray-50 group">
-                    <TableCell className="pl-6 py-3">
-                      <span className="font-bold text-slate-700 text-xs">{formatAnimalID(animal.animal_type, animal.animal_id)}</span>
-                    </TableCell>
-                    <TableCell className="py-3">
+                <div className="col-span-full h-32 flex flex-col items-center justify-center text-muted-foreground">
+                  <Loader2Icon className="h-8 w-8 mb-2 animate-spin opacity-50 text-blue-600" />
+                  <p>Loading records...</p>
+                </div>
+              ) : sortedAnimals.length > 0 ? (
+                sortedAnimals.map((animal) => (
+                  <div key={animal.animal_id} className="rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow bg-white overflow-hidden p-5 flex flex-col gap-4 relative group">
+                    <div className="flex justify-between items-start">
                       <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs ring-1 ring-blue-100 uppercase">
+                        <div className="h-10 w-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm ring-1 ring-blue-100 uppercase">
                           {animal.animal_type?.charAt(0)}
                         </div>
                         <div className="flex flex-col">
-                          <span className="font-bold text-slate-800 text-xs">{animal.nickname || 'Unnamed'}</span>
-                          <span className="text-[10px] text-slate-500 font-medium">{animal.animal_type}</span>
+                          <h3 className="font-bold text-slate-800 text-sm leading-none">{animal.nickname || 'Unnamed'}</h3>
+                          <span className="text-[11px] text-slate-500 font-medium mt-1 uppercase tracking-wider">{formatAnimalID(animal.animal_type, animal.animal_id)} · {animal.animal_type}</span>
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell className="text-slate-500 hidden md:table-cell text-xs font-medium py-3">
-                      <div className="flex flex-col gap-1">
-                        <span>{animal.biological_type}, {animal.age ? (animal.age >= 1 ? `${Math.round(animal.age * 12)} bilood (${animal.age.toFixed(1)} yr)` : `${Math.round(animal.age * 12)} bilood`) : 'N/A'} {animal.weight ? `· ${animal.weight} kg` : ''}</span>
-                        {animal.is_pregnant && (
-                          <Badge variant="outline" className="w-fit text-[9px] py-0 px-1.5 border-amber-500 text-amber-600 bg-amber-50 font-bold uppercase tracking-wider rounded-full">Pregnant</Badge>
-                        )}
+                      <div className={`px-2 py-1 rounded-md font-bold text-[9px] uppercase tracking-wider flex items-center gap-1.5 ${
+                        animal.status === 'Active' ? 'bg-emerald-50 text-emerald-600' :
+                        animal.status === 'Sold' ? 'bg-slate-100 text-slate-600' : 'bg-rose-50 text-rose-600'
+                      }`}>
+                         <div className={`w-1.5 h-1.5 rounded-full ${
+                           animal.status === 'Active' ? 'bg-emerald-500' :
+                           animal.status === 'Sold' ? 'bg-slate-500' : 'bg-rose-500'
+                         }`} />
+                         {animal.status}
                       </div>
-                    </TableCell>
-                    <TableCell className="py-3">
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <Select
-                          value={animal.status}
-                          onValueChange={(newStatus) => handleStatusChange(animal.animal_id, newStatus)}
-                          disabled={!canEdit('Animals', role) && role !== 'Farm Worker'}
-                        >
-                          <SelectTrigger className={`h-8 border-none shadow-none px-2 rounded-lg font-bold text-[10px] uppercase tracking-wider w-[110px] ${
-                            animal.status === 'Active' ? 'bg-emerald-50 text-emerald-600' :
-                            animal.status === 'Sold' ? 'bg-slate-100 text-slate-600' :
-                            'bg-rose-50 text-rose-600'
-                          }`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl border-gray-200 shadow-xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={4}>
-                            <SelectItem value="Active" className="rounded-lg m-1 cursor-pointer hover:bg-emerald-50 focus:bg-emerald-50 focus:text-emerald-700 py-2 transition-colors font-bold text-xs">Active</SelectItem>
-                            <SelectItem value="Sold" className="rounded-lg m-1 cursor-pointer hover:bg-slate-50 focus:bg-slate-50 focus:text-slate-700 py-2 transition-colors font-bold text-xs">Sold</SelectItem>
-                            <SelectItem value="Deceased" className="rounded-lg m-1 cursor-pointer hover:bg-rose-50 focus:bg-rose-50 focus:text-rose-700 py-2 transition-colors font-bold text-xs">Deceased</SelectItem>
-                          </SelectContent>
-                        </Select>
+                    </div>
+                    
+                    <div className="flex flex-col gap-2 bg-slate-50 p-3.5 rounded-xl border border-slate-100 text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Bio Type</span>
+                        <span className="font-semibold text-slate-700">{animal.biological_type}</span>
                       </div>
-                    </TableCell>
-                    <TableCell className="text-slate-500 text-xs font-medium py-3">{animal.farm?.farm_name || `Farm ${animal.farm_id}`}</TableCell>
-                    <TableCell className="py-3">
-                      <Badge variant="outline" className="rounded-full font-bold px-2 py-0.5 border-blue-200 text-blue-600 bg-blue-50 text-[10px]">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Age</span>
+                        <span className="font-semibold text-slate-700">{animal.age ? (animal.age >= 1 ? `${Math.round(animal.age * 12)} mo (${Number(animal.age.toFixed(1))} yr)` : `${Math.round(animal.age * 12)} mo`) : 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Weight</span>
+                        <span className="font-semibold text-slate-700">{animal.weight ? `${animal.weight} kg` : '-'}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Farm</span>
+                        <span className="font-semibold text-slate-700">{animal.farm?.farm_name || `Farm ${animal.farm_id}`}</span>
+                      </div>
+                      {animal.is_pregnant && (
+                        <div className="flex justify-between items-center mt-1">
+                          <span className="text-slate-500 font-medium">Pregnancy</span>
+                          <span className="font-semibold text-amber-600">
+                             Yes {animal.pregnancy_months !== undefined && animal.pregnancy_months !== null ? `(${animal.pregnancy_months >= 1 ? animal.pregnancy_months.toFixed(1) : Math.round(animal.pregnancy_months * 30.44)} ${animal.pregnancy_months >= 1 ? 'mo' : 'days'})` : ''}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-50">
+                      <Badge 
+                        variant="outline" 
+                        className="rounded-md font-bold px-2 py-1 border-blue-100 text-blue-600 bg-blue-50/50 hover:bg-blue-100 transition-colors cursor-pointer text-[10px] flex items-center gap-1.5 w-fit"
+                        onClick={() => {
+                          setSelectedVaccineAnimal(animal);
+                          setIsVaccineDetailsOpen(true);
+                        }}
+                      >
+                        <SyringeIcon className="w-3 h-3 text-blue-400" />
                         {(animal.total_doses ?? ((animal.vaccinations?.length || 0) + (animal.routineRecords?.length || 0)))} Doses
                       </Badge>
-                    </TableCell>
-                    <TableCell className="text-right pr-6 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          onClick={() => downloadIDCard(animal.animal_id)}
-                          title="Print ID Card"
-                        >
-                          <PrinterIcon className="h-4 w-4" />
-                        </Button>
+                      
+                      <div className="flex items-center gap-1">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:bg-slate-50 rounded-lg transition-opacity">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:bg-slate-100 rounded-lg">
                               <MoreHorizontalIcon className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -882,7 +1336,172 @@ export default function AnimalTable() {
                             {canDelete('Animals', role) && (
                               <>
                                 <DropdownMenuSeparator className="bg-slate-100" />
-                                <DropdownMenuItem onClick={() => handleDelete(animal.animal_id)} className="text-sm font-medium text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-700 rounded-lg m-1">
+                                <DropdownMenuItem onClick={() => setDeleteAnimalTarget(animal)} className="text-sm font-medium text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-700 rounded-lg m-1">
+                                  <TrashIcon className="mr-2 h-4 w-4" /> Delete Animal
+                                </DropdownMenuItem>
+                              </>
+                            )}
+
+                            {canEdit('Animals', role) && animal.status === 'Active' && (
+                                  <>
+                                    <DropdownMenuSeparator className="bg-slate-100" />
+                                    <DropdownMenuItem onClick={() => {
+                                      setMortalityAnimal(animal);
+                                      setMortalityData({
+                                        death_date: new Date().toISOString().split('T')[0],
+                                        cause_of_death: 'Vaccine Reaction',
+                                        notes: ''
+                                      });
+                                      setIsMortalityModalOpen(true);
+                                    }} className="text-sm font-medium text-rose-600 cursor-pointer focus:bg-rose-50 focus:text-rose-700 rounded-lg m-1">
+                                      <span className="mr-2 h-4 w-4 flex items-center justify-center">☠️</span> Report Death
+                                    </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full h-32 flex flex-col items-center justify-center text-muted-foreground">
+                  <SearchIcon className="h-8 w-8 mb-2 opacity-20" />
+                  <p>No animals found matching your search.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+          <Table>
+            <TableHeader className="bg-white">
+              <TableRow className="hover:bg-transparent border-b border-gray-50">
+                <TableHead className="w-[120px] font-bold text-[10px] text-slate-400 uppercase tracking-widest pl-6 h-12">
+                  <div className="flex items-center gap-1.5 cursor-pointer hover:text-slate-600 transition-colors" onClick={() => setSortBy(sortBy === 'latest' ? 'oldest' : 'latest')}>
+                    ID <ArrowDownUpIcon className={`w-3 h-3 ${sortBy === 'latest' || sortBy === 'oldest' ? 'text-blue-500' : 'text-gray-300'}`} />
+                  </div>
+                </TableHead>
+                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-12">
+                  <div className="flex items-center gap-1.5 cursor-pointer hover:text-slate-600 transition-colors" onClick={() => setSortBy(sortBy === 'nameAsc' ? 'nameDesc' : 'nameAsc')}>
+                    Nickname & Type <ArrowDownUpIcon className={`w-3 h-3 ${sortBy === 'nameAsc' || sortBy === 'nameDesc' ? 'text-blue-500' : 'text-gray-300'}`} />
+                  </div>
+                </TableHead>
+                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-12 hidden md:table-cell">Bio Type & Age</TableHead>
+                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-12">
+                  <div className="flex items-center gap-1.5">Status</div>
+                </TableHead>
+                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-12">Farm</TableHead>
+                <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-12">Vaccines</TableHead>
+                <TableHead className="text-right pr-6 h-12 w-[120px] font-bold text-[10px] text-slate-400 uppercase tracking-widest">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-32 text-center">
+                    <div className="flex flex-col items-center justify-center text-muted-foreground">
+                      <Loader2Icon className="h-8 w-8 mb-2 animate-spin opacity-50 text-blue-600" />
+                      <p>Loading records...</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : sortedAnimals.length > 0 ? (
+                sortedAnimals.map((animal) => (
+                  <TableRow key={animal.animal_id} className="cursor-pointer hover:bg-slate-50 transition-colors border-b border-gray-50 group">
+                    <TableCell className="pl-6 py-3">
+                      <span className="font-bold text-slate-700 text-xs">{formatAnimalID(animal.animal_type, animal.animal_id)}</span>
+                    </TableCell>
+                    <TableCell className="py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs ring-1 ring-blue-100 uppercase">
+                          {animal.animal_type?.charAt(0)}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-800 text-xs">{animal.nickname || 'Unnamed'}</span>
+                          <span className="text-[10px] text-slate-500 font-medium">{animal.animal_type}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-slate-500 hidden md:table-cell text-xs font-medium py-3">
+                      <div className="flex flex-col gap-1">
+                        <span>{animal.biological_type}, {animal.age ? (animal.age >= 1 ? `${Math.round(animal.age * 12)} bilood (${Number(animal.age.toFixed(1))} yr)` : `${Math.round(animal.age * 12)} bilood`) : 'N/A'} {animal.weight ? `· ${animal.weight} kg` : ''}</span>
+                        {animal.is_pregnant && (
+                          <Badge variant="outline" className="w-fit text-[9px] py-0 px-1.5 border-amber-500 text-amber-600 bg-amber-50 font-bold uppercase tracking-wider rounded-full mt-1">
+                            Pregnant {animal.pregnancy_months !== undefined && animal.pregnancy_months !== null 
+                              ? (animal.pregnancy_months < 1 
+                                  ? `(${Math.round(animal.pregnancy_months * 30.44)} days)` 
+                                  : `(${animal.pregnancy_months.toFixed(1)} months)`) 
+                              : ''}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Select
+                          value={animal.status}
+                          onValueChange={(newStatus) => handleStatusChange(animal.animal_id, newStatus)}
+                          disabled={!canEdit('Animals', role) && role !== 'Farm Worker'}
+                        >
+                          <SelectTrigger className={`h-8 border-none shadow-none px-2 rounded-md font-bold text-[10px] uppercase tracking-wider w-[105px] ${
+                            animal.status === 'Active' ? 'bg-emerald-50 text-emerald-600' :
+                            animal.status === 'Sold' ? 'bg-slate-100 text-slate-600' :
+                            'bg-rose-50 text-rose-600'
+                          }`}>
+                            <div className="flex items-center gap-1.5">
+                              <div className={`w-1.5 h-1.5 rounded-full ${
+                                 animal.status === 'Active' ? 'bg-emerald-500' :
+                                 animal.status === 'Sold' ? 'bg-slate-500' :
+                                 'bg-rose-500'
+                               }`} />
+                              <SelectValue />
+                            </div>
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl border-gray-200 shadow-xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={4}>
+                            <SelectItem value="Active" className="rounded-lg m-1 cursor-pointer hover:bg-emerald-50 focus:bg-emerald-50 focus:text-emerald-700 py-2 transition-colors font-bold text-xs">Active</SelectItem>
+                            <SelectItem value="Sold" className="rounded-lg m-1 cursor-pointer hover:bg-slate-50 focus:bg-slate-50 focus:text-slate-700 py-2 transition-colors font-bold text-xs">Sold</SelectItem>
+                            <SelectItem value="Deceased" className="rounded-lg m-1 cursor-pointer hover:bg-rose-50 focus:bg-rose-50 focus:text-rose-700 py-2 transition-colors font-bold text-xs">Deceased</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-slate-600 text-xs font-semibold py-4">{animal.farm?.farm_name || `Farm ${animal.farm_id}`}</TableCell>
+                    <TableCell className="py-4">
+                      <Badge 
+                        variant="outline" 
+                        className="rounded-md font-bold px-2 py-1 border-blue-100 text-blue-600 bg-blue-50/50 hover:bg-blue-100 transition-colors cursor-pointer text-[10px] flex items-center gap-1.5 w-fit"
+                        onClick={() => {
+                          setSelectedVaccineAnimal(animal);
+                          setIsVaccineDetailsOpen(true);
+                        }}
+                      >
+                        <SyringeIcon className="w-3 h-3 text-blue-400" />
+                        {(animal.total_doses ?? ((animal.vaccinations?.length || 0) + (animal.routineRecords?.length || 0)))} Doses
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right pr-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="icon" className="h-8 w-8 text-slate-400 border-gray-200 hover:bg-slate-50 rounded-lg shadow-sm transition-opacity">
+                              <MoreHorizontalIcon className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48 bg-white border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-xl">
+                            <DropdownMenuLabel className="text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</DropdownMenuLabel>
+                            <DropdownMenuSeparator className="bg-slate-100" />
+                            <DropdownMenuItem onClick={() => downloadIDCard(animal.animal_id)} className="text-sm font-medium text-slate-700 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg m-1">
+                              <PrinterIcon className="mr-2 h-4 w-4" /> Print ID Card
+                            </DropdownMenuItem>
+                            {canEdit('Animals', role) && (
+                                <DropdownMenuItem onClick={() => openEditModal(animal)} className="text-sm font-medium text-slate-700 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg m-1">
+                                  <EditIcon className="mr-2 h-4 w-4" /> Edit Record
+                                </DropdownMenuItem>
+                            )}
+                            
+                            {canDelete('Animals', role) && (
+                              <>
+                                <DropdownMenuSeparator className="bg-slate-100" />
+                                <DropdownMenuItem onClick={() => setDeleteAnimalTarget(animal)} className="text-sm font-medium text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-700 rounded-lg m-1">
                                   <TrashIcon className="mr-2 h-4 w-4" /> Delete Animal
                                 </DropdownMenuItem>
                               </>
@@ -922,8 +1541,78 @@ export default function AnimalTable() {
               )}
             </TableBody>
           </Table>
+          )}
         </CardContent>
-      </Card >
-    </div >
+        <div className="border-t border-gray-50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between bg-white gap-4">
+          <p className="text-xs text-gray-500 font-medium">Showing 1 to {filteredAnimals.length} of {filteredAnimals.length} results</p>
+          <div className="flex items-center gap-4">
+            <Select defaultValue="10">
+              <SelectTrigger className="rounded-xl border-gray-200 h-9 w-[110px] text-xs font-semibold text-gray-700 shadow-sm bg-white">
+                <SelectValue placeholder="10 / page" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl border-gray-200 shadow-xl">
+                <SelectItem value="10" className="text-xs font-medium rounded-lg">10 / page</SelectItem>
+                <SelectItem value="20" className="text-xs font-medium rounded-lg">20 / page</SelectItem>
+                <SelectItem value="50" className="text-xs font-medium rounded-lg">50 / page</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1.5">
+              <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-gray-200 text-gray-400 shadow-sm" disabled>
+                <ChevronLeftIcon className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-blue-600 bg-blue-600 text-white shadow-sm hover:bg-blue-700 hover:text-white">
+                1
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-gray-200 text-gray-400 shadow-sm" disabled>
+                <ChevronRightIcon className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Dialog open={isVaccineDetailsOpen} onOpenChange={setIsVaccineDetailsOpen}>
+        <DialogContent className="sm:max-w-[500px] rounded-[24px] border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] bg-white p-6">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-xl font-extrabold text-slate-800">Vaccination History</DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 font-medium">
+              {selectedVaccineAnimal ? `${selectedVaccineAnimal.nickname || 'Unnamed'} (${formatAnimalID(selectedVaccineAnimal.animal_type, selectedVaccineAnimal.animal_id)})` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-2">
+            {selectedVaccineAnimal?.vaccinations?.length === 0 && selectedVaccineAnimal?.routineRecords?.length === 0 ? (
+              <div className="text-center p-8 border border-dashed border-gray-200 rounded-xl">
+                <p className="text-sm font-medium text-slate-500">No vaccinations recorded for this animal.</p>
+              </div>
+            ) : (
+              <>
+                {selectedVaccineAnimal?.vaccinations?.map((v: any, i: number) => (
+                  <div key={`em-${i}`} className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800">{v.vaccine?.vaccine_name || 'Unknown Vaccine'}</h4>
+                      <p className="text-xs text-slate-500 mt-1">Standard / Emergency</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">{new Date(v.date_administered).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))}
+                {selectedVaccineAnimal?.routineRecords?.map((v: any, i: number) => (
+                  <div key={`rt-${i}`} className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800">{v.vaccine?.vaccine_name || 'Unknown Vaccine'}</h4>
+                      <p className="text-xs text-slate-500 mt-1">Routine Campaign</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">{new Date(v.date_administered).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

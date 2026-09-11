@@ -7,6 +7,7 @@ export const DEFAULT_PERMISSIONS = {
   Schedules: { view: ['Admin', 'Doctor', 'Farm Worker'], create: ['Admin', 'Doctor'], edit: ['Admin', 'Doctor'], delete: ['Admin'] },
   Alerts: { view: ['Admin', 'Doctor', 'Farm Worker'], create: ['Admin', 'Doctor', 'Farm Worker'], edit: ['Admin', 'Doctor', 'Farm Worker'], delete: ['Admin', 'Doctor'] },
   Stock: { view: ['Admin', 'Doctor'], create: ['Admin'], edit: ['Admin'], delete: ['Admin'] },
+  VaccineStores: { view: ['Admin', 'Doctor'], create: ['Admin'], edit: ['Admin'], delete: ['Admin'] },
   Vaccines: { view: ['Admin', 'Doctor'], create: ['Admin'], edit: ['Admin'], delete: ['Admin'] },
   Suppliers: { view: ['Admin', 'Doctor'], create: ['Admin'], edit: ['Admin'], delete: ['Admin'] },
   Farms: { view: ['Admin', 'Doctor', 'Farm Worker'], create: ['Admin'], edit: ['Admin'], delete: ['Admin'] },

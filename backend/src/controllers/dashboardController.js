@@ -20,12 +20,16 @@ exports.getStats = async (req, res) => {
         });
 
         let totalVaccinations = 0;
-        if (req.user?.role === 'Doctor') {
-            totalVaccinations = await prisma.vaccination.count({
-                where: { administered_by: req.user.userId }
-            });
+        const uid = req.user?.userId || req.user?.user_id;
+        
+        if (req.user?.role === 'Doctor' && uid) {
+            const emergency = await prisma.vaccination.count({ where: { administered_by: uid } });
+            const routine = await prisma.routineVaccinationRecord.count({ where: { administered_by: uid } });
+            totalVaccinations = emergency + routine;
         } else {
-            totalVaccinations = await prisma.vaccination.count();
+            const emergency = await prisma.vaccination.count();
+            const routine = await prisma.routineVaccinationRecord.count();
+            totalVaccinations = emergency + routine;
         }
 
         // 1. Top 4 Farms

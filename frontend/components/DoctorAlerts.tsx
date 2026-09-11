@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RequestVaccineDialog } from '@/components/ui/request-vaccine-dialog';
+import Swal from 'sweetalert2';
 
 function pad2(n: number) {
     return String(n).padStart(2, '0');
@@ -28,7 +29,15 @@ function todayYmd() {
 
 interface Alert {
     alert_id: number;
-    animal?: { animal_id: number; nickname?: string; animal_type?: string };
+    animal?: { 
+        animal_id: number; 
+        nickname?: string; 
+        animal_type?: string; 
+        is_pregnant?: boolean; 
+        pregnancy_start_date?: string;
+        vaccinations?: any[];
+        routineRecords?: any[];
+    };
     farm?: { farm_name: string };
     symptoms: string;
     created_at: string;
@@ -131,6 +140,102 @@ export default function DoctorAlerts() {
     }, []);
 
     const openScheduleModal = (alert: Alert) => {
+        if (alert.animal) {
+            let lastVaxDate: Date | null = null;
+            if (alert.animal.vaccinations?.length) {
+                lastVaxDate = new Date(alert.animal.vaccinations[0].date_administered);
+            }
+            if (alert.animal.routineRecords?.length) {
+                const rDate = new Date(alert.animal.routineRecords[0].date_administered);
+                if (!lastVaxDate || rDate > lastVaxDate) {
+                    lastVaxDate = rDate;
+                }
+            }
+
+            if (lastVaxDate) {
+                const diffDays = Math.floor((Date.now() - lastVaxDate.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays >= 0 && diffDays < 7) {
+                    Swal.fire({
+                        html: `
+                            <div class="flex flex-col items-center text-center mt-2 font-sans">
+                                <div class="relative w-24 h-24 mb-6">
+                                    <div class="absolute inset-0 rounded-full border-2 border-blue-200 border-dashed animate-[spin_10s_linear_infinite]"></div>
+                                    <div class="absolute inset-2 rounded-full bg-blue-50 flex items-center justify-center">
+                                        <svg class="w-11 h-11 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
+                                          <path d="M12 2L1 21h22L12 2zm1 16h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                                        </svg>
+                                    </div>
+                                    <svg class="absolute -top-1 -right-1 w-4 h-4 text-blue-400 animate-pulse" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0l2 8 8 2-8 2-2 8-2-8-8-2 8-2z"/></svg>
+                                    <svg class="absolute top-4 -left-3 w-3 h-3 text-blue-300 animate-pulse delay-75" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0l2 8 8 2-8 2-2 8-2-8-8-2 8-2z"/></svg>
+                                </div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 tracking-tight">Vaccine Cooldown!</h2>
+                                <div class="w-8 h-1 bg-blue-600 rounded-full my-4"></div>
+                                <p class="text-sm font-medium text-slate-500 max-w-[260px] leading-relaxed mx-auto">
+                                    This animal received a vaccine ${diffDays === 0 ? 'today' : diffDays + (diffDays === 1 ? ' day' : ' days') + ' ago'}.<br/>Please wait 7 days for the vaccine to settle.
+                                </p>
+                            </div>
+                        `,
+                        showCloseButton: false,
+                        showConfirmButton: true,
+                        buttonsStyling: false,
+                        confirmButtonText: 'OK',
+                        customClass: {
+                            popup: '!rounded-3xl shadow-2xl p-6 border-0 w-[420px]',
+                            confirmButton: 'bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-12 py-2.5 font-semibold mt-4 transition-colors',
+                            htmlContainer: '!m-0 !p-0'
+                        }
+                    });
+                    return;
+                }
+            }
+        }
+        if (alert.animal?.is_pregnant) {
+            let passed = "Unknown";
+            if (alert.animal.pregnancy_start_date) {
+                const start = new Date(alert.animal.pregnancy_start_date);
+                if (!isNaN(start.getTime())) {
+                    const monthsPregnant = (Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+                    if (monthsPregnant >= 0) {
+                        passed = monthsPregnant < 1 
+                            ? `${Math.round(monthsPregnant * 30.44)} days` 
+                            : `${monthsPregnant.toFixed(1)} months`;
+                    }
+                }
+            }
+
+            Swal.fire({
+                html: `
+                    <div class="flex flex-col items-center text-center mt-2 font-sans">
+                        <div class="relative w-24 h-24 mb-6">
+                            <div class="absolute inset-0 rounded-full border-2 border-blue-200 border-dashed animate-[spin_10s_linear_infinite]"></div>
+                            <div class="absolute inset-2 rounded-full bg-blue-50 flex items-center justify-center">
+                                <svg class="w-11 h-11 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 2L1 21h22L12 2zm1 16h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                                </svg>
+                            </div>
+                            <svg class="absolute -top-1 -right-1 w-4 h-4 text-blue-400 animate-pulse" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0l2 8 8 2-8 2-2 8-2-8-8-2 8-2z"/></svg>
+                            <svg class="absolute top-4 -left-3 w-3 h-3 text-blue-300 animate-pulse delay-75" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0l2 8 8 2-8 2-2 8-2-8-8-2 8-2z"/></svg>
+                        </div>
+                        <h2 class="text-2xl font-extrabold text-slate-800 tracking-tight">Vaccination Restricted!</h2>
+                        <div class="w-8 h-1 bg-blue-600 rounded-full my-4"></div>
+                        <p class="text-sm font-medium text-slate-500 max-w-[260px] leading-relaxed mx-auto">
+                            This animal is pregnant (${passed}).<br/>Vaccination can only be given after pregnancy.
+                        </p>
+                    </div>
+                `,
+                showCloseButton: false,
+                showConfirmButton: true,
+                buttonsStyling: false,
+                confirmButtonText: `OK`,
+                customClass: {
+                    popup: '!rounded-3xl shadow-2xl p-6 border-0 w-[420px]',
+                    confirmButton: 'bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-12 py-2.5 font-semibold mt-4 transition-colors',
+                    htmlContainer: '!m-0 !p-0'
+                }
+            });
+            return;
+        }
+
         setSelectedAlert(alert);
         // Default to "today" so the user cannot pick a past/future date.
         setScheduleData({ vaccine_id: '', scheduled_date: scheduleMin, schedule_type: 'Emergency' });
@@ -228,6 +333,11 @@ export default function DoctorAlerts() {
                                             <Badge variant="outline" className="bg-blue-50 hover:bg-blue-50 text-blue-700 border-blue-200 rounded-full font-bold px-2 py-0.5 uppercase tracking-wider text-[10px]">
                                                 {alert.animal?.animal_type || 'Unknown'}
                                             </Badge>
+                                            {alert.animal?.biological_type && (
+                                                <Badge variant="outline" className="bg-emerald-50 hover:bg-emerald-50 text-emerald-700 border-emerald-200 rounded-full font-bold px-2 py-0.5 uppercase tracking-wider text-[10px]">
+                                                    {alert.animal.biological_type}
+                                                </Badge>
+                                            )}
                                         </div>
                                         <p className="text-xs text-slate-600 bg-gray-50/50 p-4 rounded-xl border border-gray-100 italic font-medium">
                                             &quot;{alert.symptoms}&quot;

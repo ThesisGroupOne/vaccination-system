@@ -48,3 +48,134 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
 }
+
+/* Modern SweetAlert dialogs */
+.swal2-container {
+  z-index: 100000 !important;
+}
+
+.swal2-backdrop-show {
+  background: rgba(15, 23, 42, 0.45) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.lv-swal-popup {
+  border-radius: 24px !important;
+  padding: 1.75rem 1.5rem 1.5rem !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  box-shadow:
+    0 24px 48px -12px rgba(15, 23, 42, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset !important;
+  width: min(420px, calc(100vw - 2rem)) !important;
+  font-family: inherit !important;
+}
+
+.lv-swal-popup .swal2-icon {
+  margin: 0.25rem auto 1rem !important;
+  border-width: 3px !important;
+  width: 4rem !important;
+  height: 4rem !important;
+}
+
+.lv-swal-popup .swal2-icon.swal2-warning {
+  border-color: #fecaca !important;
+  color: #e11d48 !important;
+  background: #fff1f2 !important;
+}
+
+.lv-swal-popup .swal2-icon.swal2-success {
+  border-color: #bbf7d0 !important;
+  color: #16a34a !important;
+}
+
+.lv-swal-popup .swal2-icon.swal2-error {
+  border-color: #fecaca !important;
+}
+
+.lv-swal-title {
+  font-size: 1.25rem !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  letter-spacing: -0.02em !important;
+  margin: 0 0 0.5rem !important;
+  padding: 0 !important;
+}
+
+.lv-swal-html {
+  margin: 0 !important;
+  padding: 0 !important;
+  color: #64748b !important;
+  font-size: 0.9rem !important;
+  line-height: 1.55 !important;
+}
+
+.lv-swal-html strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.lv-swal-actions {
+  margin-top: 1.35rem !important;
+  gap: 0.65rem !important;
+  width: 100% !important;
+}
+
+.lv-swal-confirm,
+.lv-swal-cancel {
+  flex: 1 1 0 !important;
+  margin: 0 !important;
+  border-radius: 14px !important;
+  font-weight: 700 !important;
+  font-size: 0.875rem !important;
+  padding: 0.75rem 1rem !important;
+  box-shadow: none !important;
+  transition: transform 0.15s ease, filter 0.15s ease, background 0.15s ease !important;
+}
+
+.lv-swal-confirm:hover,
+.lv-swal-cancel:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.98);
+}
+
+.lv-swal-confirm-danger {
+  background: linear-gradient(180deg, #f43f5e 0%, #e11d48 100%) !important;
+  border: none !important;
+}
+
+.lv-swal-confirm-primary {
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%) !important;
+  border: none !important;
+}
+
+.lv-swal-cancel {
+  background: #f8fafc !important;
+  color: #334155 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.lv-swal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.85rem 0 0.35rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.lv-swal-note {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #9f1239;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: left;
+}

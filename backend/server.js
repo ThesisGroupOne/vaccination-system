@@ -39,6 +39,7 @@ const reportRoutes = require('./src/routes/reportRoutes');
 const activityLogRoutes = require('./src/routes/activityLogRoutes');
 const notificationRoutes = require('./src/routes/notificationRoutes');
 const delegationRoutes = require('./src/routes/delegationRoutes');
+const vaccineStoreRoutes = require('./src/routes/vaccineStoreRoutes');
 
 
 app.use('/api/auth', authRoutes);
@@ -60,6 +61,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/delegations', delegationRoutes);
+app.use('/api/vaccine-stores', vaccineStoreRoutes);
 
 
 app.listen(PORT, () => {

@@ -1,12 +1,18 @@
 const path = require('path');
 const prisma = require(path.join(__dirname, '../../config/db'));
+const { liveAgeYears } = require('../utils/age');
 
 const getFarms = async (req, res) => {
     try {
         const farms = await prisma.farm.findMany({
             include: { animals: true, alerts: true },
         });
-        res.json(farms);
+        // Age is computed live from date_of_birth so it never goes stale
+        const enriched = farms.map((f) => ({
+            ...f,
+            animals: (f.animals || []).map((a) => ({ ...a, age: liveAgeYears(a) })),
+        }));
+        res.json(enriched);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }

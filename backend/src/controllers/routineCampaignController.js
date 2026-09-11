@@ -1,5 +1,6 @@
 const path = require('path');
 const prisma = require(path.join(__dirname, '../../config/db'));
+const { liveAgeYears } = require('../utils/age');
 const COOLDOWN_DAYS = 7;
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -70,7 +71,11 @@ const getCampaignById = async (req, res) => {
         template: true,
         doctor: { select: { user_id: true, full_name: true } },
         records: {
-          include: { animal: { include: { farm: { select: { farm_name: true } } } } },
+          include: {
+            animal: { include: { farm: { select: { farm_name: true } } } },
+            administered_user: { select: { user_id: true, full_name: true } },
+            vaccine: { select: { vaccine_name: true } },
+          },
         },
       },
     });
@@ -98,7 +103,8 @@ const getCampaignById = async (req, res) => {
     res.json({
       ...campaign,
       days_remaining: daysBetween(campaign.due_date, new Date()),
-      animals,
+      // Live age from date_of_birth so the select list never shows stale ages
+      animals: animals.map((a) => ({ ...a, age: liveAgeYears(a) })),
       vaccinated_animal_ids: vaccinatedIds,
       records: normalizedRecords,
     });

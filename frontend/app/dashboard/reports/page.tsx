@@ -1,6 +1,8 @@
 "use client"
 
-import { useMemo, useState, useEffect, type ReactNode } from "react"
+import { useMemo, useState, useEffect, useCallback, useRef, type ReactNode } from "react"
+import { toast } from "sonner"
+import ReactSelect from "react-select"
 import { Button } from "@/components/ui/button"
 import {
   DownloadIcon,
@@ -29,6 +31,13 @@ import {
   HashIcon,
 } from "lucide-react"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
   ResponsiveContainer,
   AreaChart,
   Area,
@@ -42,6 +51,7 @@ import {
   Cell,
   BarChart,
   Bar,
+  Legend,
 } from "recharts"
 
 const API = "http://localhost:9999"
@@ -56,6 +66,7 @@ type ReportModule =
   | "emergency_vaccinations"
   | "overdue_vaccinations"
   | "vaccination_coverage"
+  | "decision_insights"
   | "farms"
   | "stock"
   | "stock_risk"
@@ -76,6 +87,7 @@ const MODULE_OPTIONS: { value: ReportModule; label: string; source: string }[] =
   { value: "emergency_vaccinations", label: "Emergency Vaccination", source: "Completed Emergency schedules + matched vaccination doses + alert status" },
   { value: "overdue_vaccinations", label: "Overdue / Due Soon", source: "Pending schedules past due or within risk window" },
   { value: "vaccination_coverage", label: "Vaccination Coverage", source: "Coverage % by farm (decision: prioritize low coverage)" },
+  { value: "decision_insights", label: "Decision Insights", source: "Age groups vaccinated vs not, top doctors, emergency vs routine" },
   { value: "farms", label: "Farm Report", source: "Farms + animal/alert/schedule counts" },
   { value: "stock", label: "Vaccine Stock Report", source: "VaccineStock inventory + expiry status" },
   { value: "stock_risk", label: "Stock Risk Report", source: "Expired / expiring soon / low / out of stock" },
@@ -105,16 +117,20 @@ function timeSeries(rows: ReportRow[], dateKey: string) {
     if (raw == null || raw === "-") continue
     const d = new Date(String(raw))
     if (Number.isNaN(d.getTime())) continue
-    const key = d.toLocaleDateString("en-CA")
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     map.set(key, (map.get(key) || 0) + 1)
   }
   return [...map.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([date, count]) => ({
-      date,
-      label: new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-      count,
-    }))
+    .map(([key, count]) => {
+      const [year, month] = key.split('-')
+      const dateObj = new Date(Number(year), Number(month) - 1, 1)
+      return {
+        date: key,
+        label: dateObj.toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+        count,
+      }
+    })
 }
 
 function pickDateKey(moduleName: ReportModule) {
@@ -227,9 +243,48 @@ function FieldShell({
         {children}
       </div>
     </div>
-  )
-}
+    )
+  }
 
+const reportOptions = [
+  {
+    label: "Animal Report",
+    options: [
+      { value: "animals", label: "Animal Registration" },
+      { value: "vaccinated_animals", label: "Vaccinated Animals" },
+      { value: "unvaccinated_animals", label: "Unvaccinated Animals" },
+      { value: "animal_status", label: "Animal Status" }
+    ]
+  },
+  {
+    label: "Vaccination Report",
+    options: [
+      { value: "routine_vaccinations", label: "Routine Vaccination" },
+      { value: "emergency_vaccinations", label: "Emergency Vaccination" },
+      { value: "overdue_vaccinations", label: "Overdue / Due Soon" },
+      { value: "vaccination_coverage", label: "Vaccination Coverage" },
+      { value: "decision_insights", label: "Decision Insights" }
+    ]
+  },
+  {
+    label: "Stock & Farms",
+    options: [
+      { value: "farms", label: "Farm Report" },
+      { value: "stock", label: "Vaccine Stock Report" },
+      { value: "stock_risk", label: "Stock Risk Report" }
+    ]
+  },
+  {
+    label: "Operations",
+    options: [
+      { value: "schedules", label: "Vaccination Schedule Report" },
+      { value: "queue", label: "Vaccination Queue Report" },
+      { value: "mortality", label: "Mortality Report" },
+      { value: "alerts", label: "Alert Report" }
+    ]
+  }
+]
+  
 export default function ReportsPage() {
   const [type, setType] = useState<ReportType>("all")
   const [moduleName, setModuleName] = useState<ReportModule>("mortality")
@@ -240,16 +295,25 @@ export default function ReportsPage() {
   const [animalType, setAnimalType] = useState("")
   const [gender, setGender] = useState("")
   const [status, setStatus] = useState("")
-  const [regFrom, setRegFrom] = useState("")
-  const [regTo, setRegTo] = useState("")
   const [vaccineId, setVaccineId] = useState("")
-  const [riskDays, setRiskDays] = useState("30")
+  const [ageMonths, setAgeMonths] = useState("")
   const [farms, setFarms] = useState<{ farm_id: number; farm_name: string }[]>([])
   const [vaccines, setVaccines] = useState<{ vaccine_id: number; vaccine_name: string }[]>([])
   const [populationTotal, setPopulationTotal] = useState(0)
   const [columns, setColumns] = useState<ReportColumn[]>([])
   const [rows, setRows] = useState<ReportRow[]>([])
   const [summary, setSummary] = useState<ReportSummary | null>(null)
+  const [insights, setInsights] = useState<{
+    age_groups?: { name: string; vaccinated: number; unvaccinated: number }[]
+    top_doctors?: { name: string; total: number; emergency: number; routine: number }[]
+    by_vaccination_type?: { name: string; value: number }[]
+    top_doctor_name?: string
+    top_doctor_doses?: number
+    emergency_total?: number
+    routine_total?: number
+    priority_age_group?: string
+    priority_unvaccinated?: number
+  } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasGenerated, setHasGenerated] = useState(false)
@@ -282,11 +346,6 @@ export default function ReportsPage() {
     if (token) fetchLookups()
   }, [headers, token])
 
-  useEffect(() => {
-    if (moduleName === "stock_risk") setRiskDays("30")
-    if (moduleName === "overdue_vaccinations") setRiskDays("0")
-  }, [moduleName])
-
   const queryString = useMemo(() => {
     const p = new URLSearchParams()
     p.set("module", moduleName)
@@ -302,51 +361,47 @@ export default function ReportsPage() {
     const supportsAnimal = [
       "animals", "vaccinated_animals", "animal_status", "unvaccinated_animals",
       "routine_vaccinations", "emergency_vaccinations", "overdue_vaccinations",
-      "vaccination_coverage", "schedules", "queue", "mortality", "alerts",
+      "vaccination_coverage", "decision_insights", "schedules", "queue", "mortality", "alerts",
     ].includes(moduleName)
     const supportsVaccine = [
       "vaccinated_animals", "unvaccinated_animals", "routine_vaccinations", "emergency_vaccinations",
       "overdue_vaccinations", "vaccination_coverage", "stock", "stock_risk",
     ].includes(moduleName)
-    const supportsRisk = ["overdue_vaccinations", "stock_risk"].includes(moduleName)
 
     if (supportsFarm && farmId) p.set("farm_id", farmId)
     if (supportsAnimal && animalType) p.set("animal_type", animalType)
     if (supportsAnimal && gender) p.set("gender", gender)
     if (supportsAnimal) {
-      if (["unvaccinated_animals", "vaccination_coverage"].includes(moduleName)) {
+      if (["unvaccinated_animals", "vaccination_coverage", "decision_insights"].includes(moduleName)) {
         p.set("status", status || "Active")
       } else if (status) {
         p.set("status", status)
       }
     }
-    if (supportsAnimal && regFrom) p.set("reg_from", regFrom)
-    if (supportsAnimal && regTo) p.set("reg_to", regTo)
+    if (supportsAnimal && ageMonths !== "") p.set("age", ageMonths)
     if (supportsVaccine && vaccineId) p.set("vaccine_id", vaccineId)
-    if (supportsRisk && riskDays !== "") p.set("risk_days", riskDays)
     return p.toString()
-  }, [moduleName, type, singleId, from, to, farmId, animalType, gender, status, regFrom, regTo, vaccineId, riskDays])
+  }, [moduleName, type, singleId, from, to, farmId, animalType, gender, status, vaccineId, ageMonths])
 
-  const generateReport = async () => {
-    setLoading(true)
+  const generateReport = useCallback(async (opts?: { silent?: boolean }) => {
+    if (type === "single" && !singleId) {
+      setError("Please enter a Single ID.")
+      return
+    }
+    if (type === "between" && !from && !to) {
+      setError("Please choose Start Date and/or End Date.")
+      return
+    }
+    if (!opts?.silent) setLoading(true)
     setError(null)
     try {
-      if (type === "single" && !singleId) {
-        setError("Please enter a Single ID.")
-        setLoading(false)
-        return
-      }
-      if (type === "between" && !from && !to) {
-        setError("Please choose Start Date and/or End Date.")
-        setLoading(false)
-        return
-      }
       const res = await fetch(`${API}/api/reports/vaccinations?${queryString}`, { headers })
       const data = await res.json().catch(() => ({}))
       if (res.ok) {
         setRows(data.rows || [])
         setColumns(data.columns || [])
         setSummary(data.summary || { total: (data.rows || []).length })
+        setInsights(data.insights || null)
         setHasGenerated(true)
         setPage(1)
       } else {
@@ -355,15 +410,36 @@ export default function ReportsPage() {
         setRows([])
         setColumns([])
         setSummary(null)
+        setInsights(null)
       }
     } catch {
       setError("Network error. Please check backend is running on port 9999.")
       setHasGenerated(false)
       setSummary(null)
+      setInsights(null)
     } finally {
       setLoading(false)
     }
-  }
+  }, [type, singleId, from, to, queryString, headers])
+
+  // Keep KPI + charts + table in sync whenever filters change (after first Generate)
+  const autoFilterKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (!hasGenerated) {
+      autoFilterKey.current = null
+      return
+    }
+    if (autoFilterKey.current === null) {
+      autoFilterKey.current = queryString
+      return
+    }
+    if (autoFilterKey.current === queryString) return
+    autoFilterKey.current = queryString
+    const timer = setTimeout(() => {
+      void generateReport({ silent: true })
+    }, 280)
+    return () => clearTimeout(timer)
+  }, [queryString, hasGenerated, generateReport])
 
   const resetFilters = () => {
     setType("all")
@@ -374,12 +450,11 @@ export default function ReportsPage() {
     setAnimalType("")
     setGender("")
     setStatus("")
-    setRegFrom("")
-    setRegTo("")
     setVaccineId("")
-    setRiskDays(moduleName === "overdue_vaccinations" ? "0" : "30")
+    setAgeMonths("")
     setHasGenerated(false)
     setSummary(null)
+    setInsights(null)
     setRows([])
     setColumns([])
     setPage(1)
@@ -462,15 +537,15 @@ export default function ReportsPage() {
   const supportsAnimalFilters = [
     "animals", "vaccinated_animals", "animal_status", "unvaccinated_animals",
     "routine_vaccinations", "emergency_vaccinations", "overdue_vaccinations",
-    "vaccination_coverage", "schedules", "queue", "mortality", "alerts",
+    "vaccination_coverage", "decision_insights", "schedules", "queue", "mortality", "alerts",
   ].includes(moduleName)
   const supportsFarmFilter = !["stock", "stock_risk"].includes(moduleName)
   const supportsVaccineFilter = [
     "vaccinated_animals", "unvaccinated_animals", "routine_vaccinations", "emergency_vaccinations",
     "overdue_vaccinations", "vaccination_coverage", "stock", "stock_risk",
   ].includes(moduleName)
-  const supportsRiskDaysFilter = ["overdue_vaccinations", "stock_risk"].includes(moduleName)
-  const statusDefaultsActive = ["unvaccinated_animals", "vaccination_coverage"].includes(moduleName)
+  const supportsAgeFilter = supportsAnimalFilters
+  const statusDefaultsActive = ["unvaccinated_animals", "vaccination_coverage", "decision_insights"].includes(moduleName)
 
   const dateKey = pickDateKey(moduleName)
   const categoryKey = pickCategoryKey(moduleName)
@@ -485,6 +560,79 @@ export default function ReportsPage() {
     return data.map((d) => ({ ...d, pct: Math.round((d.value / total) * 100) }))
   }, [rows, breakdownKey])
 
+  const ageData = useMemo(() => {
+    if (moduleName !== "vaccinated_animals") return []
+    if (insights?.age_groups) return insights.age_groups
+    
+    // Fallback
+    const buckets = [
+      { name: "0-3 mo", min: 0, max: 4, vaccinated: 0, unvaccinated: 0 },
+      { name: "4-6 mo", min: 4, max: 7, vaccinated: 0, unvaccinated: 0 },
+      { name: "7-12 mo", min: 7, max: 13, vaccinated: 0, unvaccinated: 0 },
+      { name: "13-24 mo", min: 13, max: 25, vaccinated: 0, unvaccinated: 0 },
+      { name: "25+ mo", min: 25, max: Infinity, vaccinated: 0, unvaccinated: 0 },
+    ]
+    for (const r of rows) {
+      const a = Number(r.age)
+      if (Number.isFinite(a) && a >= 0) {
+        const bucket = buckets.find(b => a >= b.min && a < b.max)
+        if (bucket) bucket.vaccinated++ // Fallback assumes all rows are vaccinated
+      }
+    }
+    return buckets
+  }, [rows, moduleName, insights?.age_groups])
+
+  const speciesGenderData = useMemo(() => {
+    if (insights?.species_gender_distribution) return insights.species_gender_distribution
+    
+    if (["animals", "vaccinated_animals", "animal_status", "unvaccinated_animals"].includes(moduleName)) {
+      const distribution = new Map<string, { name: string; Male: number; Female: number }>()
+      for (const r of rows) {
+        const type = String(r.animal_type || "Unknown")
+        const bioType = String(r.biological_type || r.gender || "Unknown").toLowerCase()
+        
+        if (!distribution.has(type)) {
+          distribution.set(type, { name: type, Male: 0, Female: 0 })
+        }
+        
+        const item = distribution.get(type)!
+        if (bioType.includes("female")) {
+          item.Female++
+        } else if (bioType.includes("male")) {
+          item.Male++
+        }
+      }
+      return Array.from(distribution.values())
+    }
+    return []
+  }, [rows, moduleName, insights?.species_gender_distribution])
+
+  const emergencyFarmData = useMemo(() => {
+    if (moduleName !== "emergency_vaccinations") return []
+    const grouped = new Map<string, number>()
+    for (const r of rows) {
+      const f = String(r.farm || "Unknown")
+      grouped.set(f, (grouped.get(f) || 0) + 1)
+    }
+    return Array.from(grouped.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+  }, [rows, moduleName])
+
+  const emergencyDoctorData = useMemo(() => {
+    if (moduleName !== "emergency_vaccinations") return []
+    const grouped = new Map<string, number>()
+    for (const r of rows) {
+      const d = String(r.by_user || "Unknown")
+      grouped.set(d, (grouped.get(d) || 0) + 1)
+    }
+    return Array.from(grouped.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+  }, [rows, moduleName])
+
   const kpiCards = useMemo(() => {
     if (!hasGenerated || !summary) return []
     const total = summary.total ?? rows.length
@@ -492,6 +640,31 @@ export default function ReportsPage() {
     const deathRate = populationTotal > 0 ? ((total / populationTotal) * 100).toFixed(2) : "0.00"
     const spark = trendData.map((d) => d.count)
     const usableSpark = spark.length > 1 ? spark : undefined
+
+    if (moduleName === "decision_insights") {
+      return [
+        { title: "Priority Age Group", value: String(insights?.priority_age_group || "—"), sub: `${insights?.priority_unvaccinated ?? 0} still unvaccinated`, icon: <PawPrintIcon className="w-5 h-5 text-amber-600" />, bg: "bg-amber-50" },
+        { title: "Top Doctor", value: String(insights?.top_doctor_name || "—"), sub: `${insights?.top_doctor_doses ?? 0} doses given`, icon: <UsersIcon className="w-5 h-5 text-blue-600" />, bg: "bg-blue-50" },
+        { title: "Emergency Doses", value: String(insights?.emergency_total ?? summary.emergency_total ?? 0), sub: "emergency vaccinations", icon: <AlertTriangleIcon className="w-5 h-5 text-rose-600" />, bg: "bg-rose-50" },
+        { title: "Routine Doses", value: String(insights?.routine_total ?? summary.routine_total ?? 0), sub: "routine vaccinations", icon: <SyringeIcon className="w-5 h-5 text-emerald-600" />, bg: "bg-emerald-50" },
+        { title: "Age Groups", value: String(total), sub: "groups in table", icon: <BarChart3Icon className="w-5 h-5 text-violet-600" />, bg: "bg-violet-50" },
+      ]
+    }
+
+    if (moduleName === "vaccinated_animals") {
+      const emergency = rows.reduce((s, r) => s + (Number(r.emergency_doses) || 0), 0)
+      const routine = rows.reduce((s, r) => s + (Number(r.routine_doses) || 0), 0)
+      const active = rows.filter((r) => r.status === "Active").length
+      const sold = rows.filter((r) => r.status === "Sold").length
+      const deceased = rows.filter((r) => r.status === "Deceased").length
+      return [
+        { title: "Total", value: String(total), sub: "animals in result", icon: <FileTextIcon className="w-5 h-5 text-blue-600" />, bg: "bg-blue-50", spark: usableSpark, sparkColor: "#2563EB" },
+        { title: "Active", value: String(active), sub: "currently active", icon: <BarChart3Icon className="w-5 h-5 text-emerald-600" />, bg: "bg-emerald-50", spark: usableSpark, sparkColor: "#10B981" },
+        { title: "Sold / Deceased", value: String(sold + deceased), sub: `${sold} sold · ${deceased} deceased`, icon: <SkullIcon className="w-5 h-5 text-amber-600" />, bg: "bg-amber-50", spark: usableSpark, sparkColor: "#F59E0B" },
+        { title: "Emergency Doses", value: String(emergency), sub: "from filtered result", icon: <AlertTriangleIcon className="w-5 h-5 text-rose-600" />, bg: "bg-rose-50", spark: usableSpark, sparkColor: "#EF4444" },
+        { title: "Routine Doses", value: String(routine), sub: "from filtered result", icon: <SyringeIcon className="w-5 h-5 text-violet-600" />, bg: "bg-violet-50", spark: usableSpark, sparkColor: "#8B5CF6" },
+      ]
+    }
 
     if (moduleName === "mortality") {
       const vaccineReaction = rows.filter((r) => String(r.cause_of_death || "").toLowerCase().includes("vaccine")).length
@@ -604,7 +777,7 @@ export default function ReportsPage() {
       spark: usableSpark,
       sparkColor: icons[i % icons.length].color,
     }))
-  }, [hasGenerated, summary, rows, moduleName, populationTotal, trendData])
+  }, [hasGenerated, summary, rows, moduleName, populationTotal, trendData, insights])
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
   const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize)
@@ -623,16 +796,43 @@ export default function ReportsPage() {
           <h1 className="text-[30px] leading-tight font-extrabold tracking-tight text-slate-900">System Reports</h1>
           <p className="text-slate-500 mt-1.5 text-[14px]">Live reports connected to real database modules for company decisions.</p>
         </div>
-        <div className="flex flex-wrap gap-2.5">
+        <div className="relative z-20 flex flex-wrap items-center gap-2.5">
           <Button variant="outline" className="rounded-xl h-11 px-4 border-slate-200 bg-white shadow-sm hover:bg-slate-50" onClick={generateReport} disabled={loading}>
             <RefreshCwIcon className={`w-4 h-4 mr-2 text-slate-600 ${loading ? "animate-spin" : ""}`} /> Generate
           </Button>
-          <Button variant="outline" className="rounded-xl h-11 px-4 border-slate-200 bg-white shadow-sm hover:bg-emerald-50" onClick={downloadExcelCsv} disabled={!rows.length}>
-            <FileSpreadsheetIcon className="w-4 h-4 mr-2 text-emerald-600" /> CSV
-          </Button>
-          <Button variant="outline" className="rounded-xl h-11 px-4 border-slate-200 bg-white shadow-sm hover:bg-rose-50" onClick={downloadPdf} disabled={!rows.length}>
-            <FileIcon className="w-4 h-4 mr-2 text-rose-500" /> PDF
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={!rows.length}
+                className="rounded-xl h-11 px-4 border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              >
+                <DownloadIcon className="w-4 h-4 mr-2 text-slate-600" />
+                <span className="font-semibold text-[13px]">Export</span>
+                <ChevronDownIcon className="w-4 h-4 ml-1.5 text-slate-500" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={8}
+              className="z-[100] w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"
+            >
+              <DropdownMenuItem
+                className="cursor-pointer gap-2.5 rounded-lg py-2.5 px-3 focus:bg-blue-50 focus:text-blue-700"
+                onClick={downloadExcelCsv}
+              >
+                <FileSpreadsheetIcon className="w-4 h-4 text-blue-600" />
+                <span className="font-semibold text-[13px]">Export CSV</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer gap-2.5 rounded-lg py-2.5 px-3 focus:bg-blue-50 focus:text-blue-700"
+                onClick={downloadPdf}
+              >
+                <FileIcon className="w-4 h-4 text-blue-600" />
+                <span className="font-semibold text-[13px]">Export PDF</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button className="bg-blue-600 text-white hover:bg-blue-700 rounded-xl h-11 px-5 shadow-sm shadow-blue-600/20" onClick={printReport} disabled={!rows.length}>
             <PrinterIcon className="w-4 h-4 mr-2" /> Print
           </Button>
@@ -640,7 +840,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Filters */}
-      <section className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)] overflow-hidden">
+      <section className="relative z-0 rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)] overflow-hidden">
         <div className="px-5 py-4 flex items-center justify-between gap-3 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
@@ -672,42 +872,91 @@ export default function ReportsPage() {
         {showFilters && (
           <div className="p-5 space-y-4 bg-gradient-to-b from-white to-slate-50/40">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-              <FieldShell label="Report Module" icon={<BarChart3Icon className="w-3.5 h-3.5" />}>
-                <select value={moduleName} onChange={(e) => { setModuleName(e.target.value as ReportModule); setHasGenerated(false); setRows([]); setSummary(null) }} className={controlIcon}>
-                  <optgroup label="Animal Report">
-                    <option value="animals">Animal Registration</option>
-                    <option value="vaccinated_animals">Vaccinated Animals</option>
-                    <option value="unvaccinated_animals">Unvaccinated Animals</option>
-                    <option value="animal_status">Animal Status</option>
-                  </optgroup>
-                  <optgroup label="Vaccination Report">
-                    <option value="routine_vaccinations">Routine Vaccination</option>
-                    <option value="emergency_vaccinations">Emergency Vaccination</option>
-                    <option value="overdue_vaccinations">Overdue / Due Soon</option>
-                    <option value="vaccination_coverage">Vaccination Coverage</option>
-                  </optgroup>
-                  <optgroup label="Stock & Farms">
-                    <option value="farms">Farm Report</option>
-                    <option value="stock">Vaccine Stock Report</option>
-                    <option value="stock_risk">Stock Risk Report</option>
-                  </optgroup>
-                  <optgroup label="Operations">
-                    <option value="schedules">Vaccination Schedule Report</option>
-                    <option value="queue">Vaccination Queue Report</option>
-                    <option value="mortality">Mortality Report</option>
-                    <option value="alerts">Alert Report</option>
-                  </optgroup>
-                </select>
+              <FieldShell label="Report Module" icon={<BarChart3Icon className="w-3.5 h-3.5 z-20 relative" />}>
+                <ReactSelect
+                  options={reportOptions}
+                  value={reportOptions.flatMap(g => g.options).find(o => o.value === moduleName)}
+                  onChange={(opt) => {
+                    if (opt) {
+                      setModuleName(opt.value as ReportModule);
+                      setHasGenerated(false);
+                      setRows([]);
+                      setSummary(null);
+                    }
+                  }}
+                  isSearchable
+                  menuShouldScrollIntoView={false}
+                  menuPosition="fixed"
+                  menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+                  placeholder="Select Module"
+                  styles={{
+                    control: (base, state) => ({
+                      ...base,
+                      minHeight: '44px',
+                      borderRadius: '0.75rem',
+                      borderColor: state.isFocused ? '#60A5FA' : '#E2E8F0',
+                      boxShadow: state.isFocused ? '0 0 0 2px #DBEAFE' : '0 1px 2px rgba(15,23,42,0.04)',
+                      paddingLeft: '30px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#334155',
+                      cursor: 'pointer',
+                      ':hover': { borderColor: '#CBD5E1' }
+                    }),
+                    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    menu: (base) => ({
+                      ...base,
+                      borderRadius: '0.75rem',
+                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+                      border: '1px solid #F1F5F9',
+                      zIndex: 50,
+                    }),
+                    menuList: (base) => ({
+                      ...base,
+                      padding: '8px'
+                    }),
+                    groupHeading: (base) => ({
+                      ...base,
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: '#94A3B8',
+                      padding: '8px 12px 4px',
+                    }),
+                    option: (base, state) => ({
+                      ...base,
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      backgroundColor: state.isFocused ? '#F8FAFC' : 'transparent',
+                      color: state.isFocused ? '#2563EB' : '#475569',
+                      padding: '8px 12px',
+                      borderRadius: '0.5rem',
+                      ':active': { backgroundColor: '#EFF6FF' }
+                    }),
+                    singleValue: (base) => ({
+                      ...base,
+                      color: '#334155',
+                      fontWeight: 600
+                    })
+                  }}
+                />
               </FieldShell>
               <FieldShell label="Query Type" icon={<FolderIcon className="w-3.5 h-3.5" />}>
-                <select value={type} onChange={(e) => setType(e.target.value as ReportType)} className={controlIcon}>
-                  <option value="all">All Records</option>
-                  <option value="single">Single Record ID</option>
-                  <option value="between">Between Dates</option>
-                </select>
+                <Select value={type} onValueChange={(v) => setType(v as ReportType)}>
+                  <SelectTrigger className={controlIcon}>
+                    <SelectValue placeholder="Query Type" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    <SelectItem value="all" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">All Records</SelectItem>
+                    <SelectItem value="single" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Single Record ID</SelectItem>
+                    <SelectItem value="between" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Between Dates</SelectItem>
+                  </SelectContent>
+                </Select>
               </FieldShell>
-              <FieldShell label="Single ID" icon={<HashIcon className="w-3.5 h-3.5" />}>
-                <input type="number" placeholder="ID e.g. 5" value={singleId} onChange={(e) => setSingleId(e.target.value)} disabled={type !== "single"} className={controlIcon} />
+              <FieldShell label="Single ID or Name" icon={<HashIcon className="w-3.5 h-3.5" />}>
+                <input type="text" placeholder="ID/Name e.g. 5 or Cadey" value={singleId} onChange={(e) => setSingleId(e.target.value)} disabled={type !== "single"} className={controlIcon} />
               </FieldShell>
               <FieldShell label="Start Date" icon={<CalendarIcon className="w-3.5 h-3.5" />}>
                 <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} disabled={type !== "between"} className={controlIcon} />
@@ -719,49 +968,99 @@ export default function ReportsPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3.5">
               <FieldShell label="Location (Farm)" icon={<MapPinIcon className="w-3.5 h-3.5" />}>
-                <select value={farmId} onChange={(e) => setFarmId(e.target.value)} disabled={!supportsFarmFilter} className={controlIcon}>
-                  <option value="">All Farms</option>
-                  {farms.map((f) => <option key={f.farm_id} value={f.farm_id}>{f.farm_name}</option>)}
-                </select>
+                <Select value={farmId || "all"} onValueChange={(v) => setFarmId(v === "all" ? "" : v)} disabled={!supportsFarmFilter}>
+                  <SelectTrigger className={controlIcon}>
+                    <SelectValue placeholder="All Farms" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white max-h-[300px]">
+                    <SelectItem value="all" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">All Farms</SelectItem>
+                    {farms.map((f) => <SelectItem key={f.farm_id} value={f.farm_id.toString()} className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">{f.farm_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </FieldShell>
               <FieldShell label="Animal Type" icon={<PawPrintIcon className="w-3.5 h-3.5" />}>
-                <select value={animalType} onChange={(e) => setAnimalType(e.target.value)} disabled={!supportsAnimalFilters} className={controlIcon}>
-                  <option value="">All Types</option>
-                  <option value="Goat">Goat</option>
-                  <option value="Cattle">Cattle</option>
-                  <option value="Camel">Camel</option>
-                </select>
+                <Select value={animalType || "all"} onValueChange={(v) => setAnimalType(v === "all" ? "" : v)} disabled={!supportsAnimalFilters}>
+                  <SelectTrigger className={controlIcon}>
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    <SelectItem value="all" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">All Types</SelectItem>
+                    <SelectItem value="Goat" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Goat</SelectItem>
+                    <SelectItem value="Cattle" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Cattle</SelectItem>
+                    <SelectItem value="Camel" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Camel</SelectItem>
+                  </SelectContent>
+                </Select>
               </FieldShell>
               <FieldShell label="Gender" icon={<UsersIcon className="w-3.5 h-3.5" />}>
-                <select value={gender} onChange={(e) => setGender(e.target.value)} disabled={!supportsAnimalFilters} className={controlIcon}>
-                  <option value="">All Genders</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                </select>
+                <Select value={gender || "all"} onValueChange={(v) => setGender(v === "all" ? "" : v)} disabled={!supportsAnimalFilters}>
+                  <SelectTrigger className={controlIcon}>
+                    <SelectValue placeholder="All Genders" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    <SelectItem value="all" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">All Genders</SelectItem>
+                    <SelectItem value="Male" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Male</SelectItem>
+                    <SelectItem value="Female" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Female</SelectItem>
+                  </SelectContent>
+                </Select>
               </FieldShell>
               <FieldShell label="Animal Status" icon={<SkullIcon className="w-3.5 h-3.5" />}>
-                <select value={status} onChange={(e) => setStatus(e.target.value)} disabled={!supportsAnimalFilters} className={controlIcon}>
-                  <option value="">{statusDefaultsActive ? "Active (default)" : "All Status"}</option>
-                  <option value="Active">Active</option>
-                  <option value="Sold">Sold</option>
-                  <option value="Deceased">Deceased</option>
-                </select>
+                <Select value={status || "all"} onValueChange={(v) => setStatus(v === "all" ? "" : v)} disabled={!supportsAnimalFilters}>
+                  <SelectTrigger className={controlIcon}>
+                    <SelectValue placeholder={statusDefaultsActive ? "Active (default)" : "All Status"} />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    <SelectItem value="all" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">{statusDefaultsActive ? "Active (default)" : "All Status"}</SelectItem>
+                    <SelectItem value="Active" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Active</SelectItem>
+                    <SelectItem value="Completed" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Completed</SelectItem>
+                    <SelectItem value="Sold" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Sold</SelectItem>
+                    <SelectItem value="Deceased" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">Deceased</SelectItem>
+                  </SelectContent>
+                </Select>
               </FieldShell>
               <FieldShell label="Vaccine" icon={<ShieldIcon className="w-3.5 h-3.5" />}>
-                <select value={vaccineId} onChange={(e) => setVaccineId(e.target.value)} disabled={!supportsVaccineFilter} className={controlIcon}>
-                  <option value="">All Vaccines</option>
-                  {vaccines.map((v) => <option key={v.vaccine_id} value={v.vaccine_id}>{v.vaccine_name}</option>)}
-                </select>
+                <Select value={vaccineId || "all"} onValueChange={(v) => setVaccineId(v === "all" ? "" : v)} disabled={!supportsVaccineFilter}>
+                  <SelectTrigger className={controlIcon}>
+                    <SelectValue placeholder="All Vaccines" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white max-h-[300px]">
+                    <SelectItem value="all" className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">All Vaccines</SelectItem>
+                    {vaccines.map((v) => <SelectItem key={v.vaccine_id} value={v.vaccine_id.toString()} className="text-xs font-semibold py-2 cursor-pointer focus:bg-slate-50 focus:text-blue-600 rounded-lg mx-1">{v.vaccine_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </FieldShell>
-              <FieldShell label={moduleName === "overdue_vaccinations" ? "Due Window" : "Risk Window"}>
-                <input type="number" min={0} value={riskDays} onChange={(e) => setRiskDays(e.target.value)} disabled={!supportsRiskDaysFilter} className={controlPlain} placeholder="days" />
+              <FieldShell label="Age">
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={ageMonths}
+                  onKeyDown={e => {
+                    const allowed = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End']
+                    if (allowed.includes(e.key)) return
+                    if (e.key === '.' && !ageMonths.includes('.')) return
+                    if (!/^\d$/.test(e.key)) e.preventDefault()
+                  }}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (/^\d*\.?\d*$/.test(val)) {
+                      setAgeMonths(val)
+                    }
+                  }}
+                  disabled={!supportsAgeFilter}
+                  className={controlPlain}
+                  placeholder="e.g. 6"
+                />
               </FieldShell>
-              <FieldShell label="Reg. Date From" icon={<CalendarIcon className="w-3.5 h-3.5" />}>
-                <input type="date" value={regFrom} onChange={(e) => setRegFrom(e.target.value)} disabled={!supportsAnimalFilters} className={controlIcon} />
-              </FieldShell>
-              <FieldShell label="Reg. Date To" icon={<CalendarIcon className="w-3.5 h-3.5" />}>
-                <input type="date" value={regTo} onChange={(e) => setRegTo(e.target.value)} disabled={!supportsAnimalFilters} className={controlIcon} />
-              </FieldShell>
+            </div>
+            <div className="pt-4 mt-2 flex justify-end border-t border-slate-100">
+              <Button 
+                onClick={generateReport} 
+                disabled={loading} 
+                className="bg-blue-600 text-white hover:bg-blue-700 rounded-xl h-11 px-8 shadow-sm shadow-blue-600/20 font-bold"
+              >
+                <RefreshCwIcon className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} /> 
+                {loading ? "Generating..." : "Generate Report"}
+              </Button>
             </div>
           </div>
         )}
@@ -800,18 +1099,105 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Charts */}
-      {hasGenerated && !error && rows.length > 0 && (
+      {/* Decision Insights Charts */}
+      {hasGenerated && !error && moduleName === "decision_insights" && insights && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[14px] font-extrabold text-slate-800">{titles.trend}</h3>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">Daily</span>
+            <h3 className="text-[14px] font-extrabold text-slate-800 mb-1">Age Groups: Vaccinated vs Not</h3>
+            <p className="text-[11px] text-slate-400 mb-3 font-medium">Which ages still need vaccination — prioritize high unvaccinated bars</p>
+            <div className="h-[170px]">
+              {(insights.age_groups || []).length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={insights.age_groups} margin={{ top: 4, right: 4, left: -12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0" }} />
+                    <Bar dataKey="vaccinated" name="Vaccinated" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="unvaccinated" name="Unvaccinated" stackId="a" fill="#F59E0B" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-slate-400">No age group data</div>
+              )}
             </div>
-            <div className="h-[250px]">
+          </div>
+
+          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] p-5">
+            <h3 className="text-[14px] font-extrabold text-slate-800 mb-1">Top Doctors by Doses</h3>
+            <p className="text-[11px] text-slate-400 mb-3 font-medium">Who administered the most vaccinations</p>
+            <div className="h-[170px]">
+              {(insights.top_doctors || []).length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={insights.top_doctors} layout="vertical" margin={{ left: 4, right: 20, top: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0" }} />
+                    <Bar dataKey="total" name="Total doses" fill="#2563EB" radius={[0, 10, 10, 0]} barSize={18} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-slate-400">No doctor dose data</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] p-5">
+            <h3 className="text-[14px] font-extrabold text-slate-800 mb-1">Emergency vs Routine</h3>
+            <p className="text-[11px] text-slate-400 mb-3 font-medium">Which vaccination type is used most</p>
+            <div className="h-[170px] flex items-center">
+              {(insights.by_vaccination_type || []).some((d) => d.value > 0) ? (
+                <>
+                  <div className="relative w-[55%] h-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={insights.by_vaccination_type} dataKey="value" nameKey="name" innerRadius={40} outerRadius={60} paddingAngle={3} stroke="#fff" strokeWidth={2}>
+                          <Cell fill="#EF4444" />
+                          <Cell fill="#10B981" />
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-2xl font-extrabold text-slate-900">
+                        {(insights.emergency_total || 0) + (insights.routine_total || 0)}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 space-y-3 pr-1">
+                    {(insights.by_vaccination_type || []).map((d, i) => (
+                      <div key={d.name} className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: i === 0 ? "#EF4444" : "#10B981" }} />
+                          <span className="text-[12px] font-semibold text-slate-600 truncate">{d.name}</span>
+                        </div>
+                        <p className="text-[12px] font-extrabold text-slate-800">{d.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="w-full text-center text-sm text-slate-400">No vaccination type data</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Charts */}
+      {hasGenerated && !error && rows.length > 0 && moduleName !== "decision_insights" && (
+        <div key={`charts-${queryString}`} className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-[13px] font-extrabold text-slate-800">{titles.trend}</h3>
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">Monthly</span>
+            </div>
+            <div className="h-[160px]">
               {trendData.length ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trendData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                  <AreaChart data={trendData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                     <defs>
                       <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#2563EB" stopOpacity={0.25} />
@@ -819,77 +1205,232 @@ export default function ReportsPage() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 8px 20px rgba(0,0,0,0.06)" }} />
-                    <Area type="monotone" dataKey="count" stroke="#2563EB" fill="url(#trendFill)" strokeWidth={2.5} />
-                    <Line type="monotone" dataKey="count" stroke="#2563EB" strokeWidth={0} dot={{ r: 4, fill: "#2563EB", strokeWidth: 2, stroke: "#fff" }} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", boxShadow: "0 8px 20px rgba(0,0,0,0.06)", fontSize: 12 }} />
+                    <Area type="monotone" dataKey="count" stroke="#2563EB" fill="url(#trendFill)" strokeWidth={2} />
+                    <Line type="monotone" dataKey="count" stroke="#2563EB" strokeWidth={0} dot={{ r: 3, fill: "#2563EB", strokeWidth: 2, stroke: "#fff" }} />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-sm text-slate-400">No time-series data</div>
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">No time-series data</div>
               )}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] p-5">
-            <h3 className="text-[14px] font-extrabold text-slate-800 mb-3">{titles.category}</h3>
-            <div className="h-[250px] flex items-center">
+          <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+            <h3 className="text-[13px] font-extrabold text-slate-800 mb-2">{titles.category}</h3>
+            <div className="h-[160px] flex items-center">
               {categoryData.length ? (
                 <>
-                  <div className="relative w-[55%] h-full">
+                  <div className="relative w-[50%] h-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86} paddingAngle={4} stroke="#fff" strokeWidth={3}>
+                        <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={3} stroke="#fff" strokeWidth={2}>
                           {categoryData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                         </Pie>
                         <Tooltip />
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <span className="text-2xl font-extrabold text-slate-900">{categoryTotal}</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total</span>
+                      <span className="text-lg font-extrabold text-slate-900 leading-none">{categoryTotal}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Total</span>
                     </div>
                   </div>
-                  <div className="flex-1 space-y-3 pr-1">
+                  <div className="flex-1 space-y-2 pr-1">
                     {categoryData.slice(0, 4).map((d, i) => (
                       <div key={d.name} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                          <span className="text-[12px] font-semibold text-slate-600 truncate">{d.name}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                          <span className="text-[11px] font-semibold text-slate-600 truncate">{d.name}</span>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="text-[12px] font-extrabold text-slate-800">{d.value}</p>
-                          <p className="text-[10px] text-slate-400 font-medium">{Math.round((d.value / Math.max(categoryTotal, 1)) * 100)}%</p>
+                          <p className="text-[11px] font-extrabold text-slate-800">{d.value}</p>
+                          <p className="text-[9px] text-slate-400 font-medium">{Math.round((d.value / Math.max(categoryTotal, 1)) * 100)}%</p>
                         </div>
                       </div>
                     ))}
                   </div>
                 </>
               ) : (
-                <div className="w-full text-center text-sm text-slate-400">No category data</div>
+                <div className="w-full text-center text-xs text-slate-400">No category data</div>
               )}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] p-5">
-            <h3 className="text-[14px] font-extrabold text-slate-800 mb-3">{titles.breakdown}</h3>
-            <div className="h-[250px]">
+          <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+            <h3 className="text-[13px] font-extrabold text-slate-800 mb-2">{titles.breakdown}</h3>
+            <div className="h-[160px]">
               {breakdownData.length ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={breakdownData} layout="vertical" margin={{ left: 4, right: 28, top: 8, bottom: 8 }}>
+                  <BarChart data={breakdownData} layout="vertical" margin={{ left: 0, right: 24, top: 4, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
                     <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0" }} />
-                    <Bar dataKey="value" fill="#8B5CF6" radius={[0, 10, 10, 0]} barSize={18} label={{ position: "right", fill: "#64748B", fontSize: 11, formatter: (v: number | string) => `${v}` }} />
+                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10, fill: "#64748B" }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                    <Bar dataKey="value" fill="#8B5CF6" radius={[0, 8, 8, 0]} barSize={12} label={{ position: "right", fill: "#64748B", fontSize: 10, formatter: (v: number | string) => `${v}` }} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-sm text-slate-400">No breakdown data</div>
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">No breakdown data</div>
               )}
             </div>
           </div>
+
+          {moduleName === "vaccinated_animals" && (
+            <div className="rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 via-white to-blue-50/40 shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+              <div className="flex items-center justify-between mb-2.5">
+                <div>
+                  <h3 className="text-[13px] font-extrabold text-slate-800">Top Doctors</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">Doses given · 0 = none yet</p>
+                </div>
+                <div className="w-8 h-8 rounded-lg bg-blue-600/10 text-blue-600 flex items-center justify-center">
+                  <UsersIcon className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="h-[160px] overflow-y-auto pr-0.5 space-y-2">
+                {(insights?.top_doctors || []).length ? (
+                  (() => {
+                    const maxDoses = Math.max(1, ...(insights!.top_doctors!.map((d) => d.total)))
+                    return insights!.top_doctors!.map((d, i) => {
+                      const pct = Math.round((d.total / maxDoses) * 100)
+                      const initials = d.name
+                        .split(" ")
+                        .map((p) => p[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()
+                      const rankTone =
+                        i === 0
+                          ? "from-blue-600 to-sky-500"
+                          : i === 1
+                            ? "from-indigo-500 to-blue-400"
+                            : "from-slate-400 to-slate-300"
+                      return (
+                        <div
+                          key={d.name}
+                          className="rounded-xl bg-white/80 border border-slate-100 px-2.5 py-2 shadow-sm"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className={`relative w-8 h-8 rounded-full bg-gradient-to-br ${rankTone} text-white text-[10px] font-extrabold flex items-center justify-center shrink-0`}>
+                              {initials || "DR"}
+                              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white text-[9px] font-bold text-slate-600 border border-slate-200 flex items-center justify-center">
+                                {i + 1}
+                              </span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[12px] font-bold text-slate-800 truncate">{d.name}</p>
+                                <p className="text-[12px] font-extrabold text-slate-900 tabular-nums">{d.total}</p>
+                              </div>
+                              <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full bg-gradient-to-r ${d.total > 0 ? "from-blue-600 to-sky-400" : "from-slate-200 to-slate-200"}`}
+                                  style={{ width: `${d.total > 0 ? Math.max(pct, 8) : 0}%` }}
+                                />
+                              </div>
+                              <p className="mt-1 text-[9px] font-medium text-slate-400">
+                                E {d.emergency ?? 0} · R {d.routine ?? 0}
+                                {d.total === 0 ? " · no doses yet" : ""}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  })()
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">No doctor dose data</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {moduleName === "vaccinated_animals" && (
+            <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+              <h3 className="text-[13px] font-extrabold text-slate-800 mb-2">Age Distribution (Vaccinated Animals)</h3>
+              <div className="h-[160px]">
+                {ageData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={ageData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                      <Bar dataKey="vaccinated" name="Vaccinated" fill="#10B981" radius={[4, 4, 0, 0]} barSize={24} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">No age data</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {["animals", "vaccinated_animals", "animal_status", "unvaccinated_animals"].includes(moduleName) && (
+            <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+              <h3 className="text-[13px] font-extrabold text-slate-800 mb-2">Species & Gender Distribution</h3>
+              <div className="h-[160px]">
+                {speciesGenderData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={speciesGenderData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: 10 }} />
+                      <Bar dataKey="Female" name="Female" stackId="a" fill="#EC4899" radius={[0, 0, 0, 0]} barSize={24} />
+                      <Bar dataKey="Male" name="Male" stackId="a" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={24} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">No species data</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {moduleName === "emergency_vaccinations" && (
+            <>
+              <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+                <h3 className="text-[13px] font-extrabold text-slate-800 mb-2">Vaccinations per Farm</h3>
+                <div className="h-[160px]">
+                  {emergencyFarmData.length ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={emergencyFarmData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                        <Bar dataKey="value" name="Vaccinations" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={24} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-xs text-slate-400">No farm data</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)] p-3.5">
+                <h3 className="text-[13px] font-extrabold text-slate-800 mb-2">Top Doctors</h3>
+                <div className="h-[160px]">
+                  {emergencyDoctorData.length ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={emergencyDoctorData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                        <Bar dataKey="value" name="Doses Given" fill="#10B981" radius={[4, 4, 0, 0]} barSize={24} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-xs text-slate-400">No doctor data</div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 

@@ -9,13 +9,34 @@ import {
   CalendarIcon, SyringeIcon, PlusIcon, PlayIcon, CheckCircleIcon,
   ClockIcon, RefreshCwIcon, TrashIcon, PencilIcon, PowerIcon,
   ChevronRightIcon, AlertCircleIcon, LayersIcon, SearchIcon,
-  XIcon, PackageIcon, InfoIcon, AlertTriangleIcon
+  XIcon, PackageIcon, InfoIcon, AlertTriangleIcon, MegaphoneIcon, FilterIcon, ArrowUpDownIcon, MoreVerticalIcon, FileTextIcon, FileIcon,
+  ShieldCheckIcon, UsersIcon,
 } from "lucide-react"
 
 import Swal from "sweetalert2"
 import { toast } from "sonner"
 
 const API = "http://localhost:9999"
+
+// Known vaccine abbreviations → full display names
+const VACCINE_FULL_NAMES: Record<string, string> = {
+  "PPR": "Peste des Petits Ruminants (PPR)",
+}
+function fullVaccineName(name?: string | null) {
+  if (!name) return ""
+  return VACCINE_FULL_NAMES[name.trim().toUpperCase()] || name
+}
+
+// DB stores age in years (float): < 1 year shows months, otherwise years
+function formatAnimalAge(ageYears: number) {
+  if (!ageYears || ageYears <= 0) return ''
+  if (ageYears < 1) {
+    const months = Math.round(ageYears * 12)
+    return `${months} month${months === 1 ? '' : 's'}`
+  }
+  const rounded = Number.isInteger(ageYears) ? ageYears : Number(ageYears.toFixed(1))
+  return `${rounded} year${rounded === 1 ? '' : 's'}`
+}
 
 /** Local calendar date as YYYY-MM-DD (avoids UTC off-by-one) */
 function todayLocalYmd() {
@@ -24,6 +45,19 @@ function todayLocalYmd() {
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
   return `${y}-${m}-${day}`
+}
+
+/** Add months to YYYY-MM-DD (same rule as backend next_due_date) */
+function addMonthsYmd(ymd: string, months: number) {
+  if (!ymd || !months) return ""
+  const [y, m, d] = ymd.split("-").map(Number)
+  if (!y || !m || !d) return ""
+  const dt = new Date(y, m - 1, d)
+  dt.setMonth(dt.getMonth() + months)
+  const yy = dt.getFullYear()
+  const mm = String(dt.getMonth() + 1).padStart(2, "0")
+  const dd = String(dt.getDate()).padStart(2, "0")
+  return `${yy}-${mm}-${dd}`
 }
 
 /** Usable stock: matching vaccine (+ Camel CML-P / Camel-Pox alias), qty, not expired/archived */
@@ -99,6 +133,8 @@ interface AnimalRef {
 interface CampaignRecord {
   id: number; animal_id: number; date_administered: string
   next_due_date: string; dosage_ml?: number | null; animal: AnimalRef
+  administered_user?: { user_id: number; full_name: string }
+  vaccine?: { vaccine_name: string }
 }
 interface CampaignDetails extends Campaign {
   template?: { frequency_months: number }
@@ -110,16 +146,18 @@ interface CampaignDetails extends Campaign {
 
 // ── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    Active:     "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Inactive:   "bg-slate-100 text-slate-500 border-slate-200",
-    Upcoming:   "bg-blue-100 text-blue-700 border-blue-200",
-    Scheduled:  "bg-purple-100 text-purple-700 border-purple-200",
-    InProgress: "bg-orange-100 text-orange-700 border-orange-200",
-    Completed:  "bg-teal-100 text-teal-700 border-teal-200",
+  const map: Record<string, { bg: string; dot: string }> = {
+    Active:     { bg: "bg-emerald-100/80 text-emerald-700", dot: "bg-emerald-500" },
+    Inactive:   { bg: "bg-slate-100 text-slate-500", dot: "bg-slate-400" },
+    Upcoming:   { bg: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
+    Scheduled:  { bg: "bg-purple-100 text-purple-700", dot: "bg-purple-500" },
+    InProgress: { bg: "bg-orange-100 text-orange-700", dot: "bg-orange-500" },
+    Completed:  { bg: "bg-teal-100 text-teal-700", dot: "bg-teal-500" },
   }
+  const style = map[status] || { bg: "bg-gray-100 text-gray-600", dot: "bg-gray-400" }
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${map[status] || "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold ${style.bg}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
       {status}
     </span>
   )
@@ -250,6 +288,7 @@ export default function RoutineVaccinationPage() {
   const [completeDetails, setCompleteDetails] = useState<CampaignDetails | null>(null)
   const [selectedAnimalIds, setSelectedAnimalIds] = useState<number[]>([])
   const [animalSearch, setAnimalSearch] = useState('')
+  const [expandedRecordAnimalId, setExpandedRecordAnimalId] = useState<number | null>(null)
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : ''
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
@@ -276,7 +315,7 @@ export default function RoutineVaccinationPage() {
     if (r === 'Admin') setTab('templates')
     fetchCampaigns()
     fetchVaccines()
-    if (r === 'Admin') fetchTemplates()
+    fetchTemplates()
   }, [])
 
   const fetchTemplates = useCallback(async () => {
@@ -457,10 +496,10 @@ export default function RoutineVaccinationPage() {
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = [
-    { label: 'Active Templates', value: templates.filter(t => t.status === 'Active').length, color: 'bg-emerald-50 text-emerald-700', icon: <LayersIcon className="w-5 h-5" /> },
-    { label: 'Upcoming', value: campaigns.filter(c => c.status === 'Upcoming').length, color: 'bg-blue-50 text-blue-700', icon: <ClockIcon className="w-5 h-5" /> },
-    { label: 'Scheduled', value: campaigns.filter(c => c.status === 'Scheduled').length, color: 'bg-purple-50 text-purple-700', icon: <CalendarIcon className="w-5 h-5" /> },
-    { label: 'Completed', value: completedCampaigns.length, color: 'bg-teal-50 text-teal-700', icon: <CheckCircleIcon className="w-5 h-5" /> },
+    { label: 'Active Templates', value: templates.filter(t => t.status === 'Active').length, icon: <LayersIcon className="w-5 h-5" />, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600', valueColor: 'text-emerald-600', bar: 'bg-emerald-500' },
+    { label: 'Upcoming', value: campaigns.filter(c => ['Upcoming', 'InProgress'].includes(c.status)).length, icon: <ClockIcon className="w-5 h-5" />, iconBg: 'bg-blue-50', iconColor: 'text-blue-600', valueColor: 'text-blue-600', bar: 'bg-blue-500' },
+    { label: 'Scheduled', value: campaigns.filter(c => c.status === 'Scheduled' || (c.status === 'InProgress' && c.scheduled_date)).length, icon: <CalendarIcon className="w-5 h-5" />, iconBg: 'bg-violet-50', iconColor: 'text-violet-600', valueColor: 'text-violet-600', bar: 'bg-violet-500' },
+    { label: 'Completed', value: completedCampaigns.length, icon: <CheckCircleIcon className="w-5 h-5" />, iconBg: 'bg-teal-50', iconColor: 'text-teal-600', valueColor: 'text-teal-600', bar: 'bg-teal-500' },
   ]
 
   return (
@@ -474,7 +513,7 @@ export default function RoutineVaccinationPage() {
           <p className="text-slate-500 text-sm mt-1">Manage recurring vaccination templates, campaigns, and schedules</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={fetchCampaigns} variant="outline" size="sm" className="rounded-xl text-blue-600 border-blue-200 hover:bg-blue-50">
+          <Button onClick={() => { fetchCampaigns(); fetchTemplates() }} variant="outline" size="sm" className="rounded-xl text-blue-600 border-blue-200 hover:bg-blue-50">
             <RefreshCwIcon className="w-4 h-4 mr-1" /> Refresh
           </Button>
           {role === 'Admin' && (
@@ -493,43 +532,72 @@ export default function RoutineVaccinationPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((s, i) => (
-          <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl ${s.color} flex items-center justify-center`}>{s.icon}</div>
-            <div>
-              <div className="text-xl font-extrabold text-slate-800">{s.value}</div>
-              <div className="text-[11px] text-slate-500 font-medium">{s.label}</div>
+          <div
+            key={i}
+            className="relative bg-white rounded-2xl px-5 pt-5 pb-6 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.08)] border border-slate-100/80 overflow-hidden"
+          >
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-full ${s.iconBg} ${s.iconColor} flex items-center justify-center shrink-0`}>
+                {s.icon}
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[28px] leading-none font-extrabold tracking-tight ${s.valueColor}`}>{s.value}</div>
+                <div className="mt-1.5 text-[13px] font-semibold text-slate-600">{s.label}</div>
+              </div>
+            </div>
+            <div className="absolute bottom-3 left-5 right-5 h-[3px] rounded-full bg-slate-100 overflow-hidden">
+              <span className={`absolute right-0 top-0 h-full w-8 rounded-full ${s.bar}`} />
             </div>
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+      <div className="flex items-center gap-2 mb-6">
         {role === 'Admin' && (
           <button onClick={() => setTab('templates')}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'templates' ? 'bg-white shadow text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}>
-            📋 Templates
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold transition-all ${tab === 'templates' ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)] text-blue-600 border border-slate-100' : 'text-slate-500 hover:bg-slate-100'}`}>
+            <FileTextIcon className="w-4 h-4" /> Templates
           </button>
         )}
         <button onClick={() => setTab('campaigns')}
-          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'campaigns' ? 'bg-white shadow text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}>
-          📅 Campaigns
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold transition-all ${tab === 'campaigns' ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)] text-blue-600 border border-slate-100' : 'text-slate-500 hover:bg-slate-100'}`}>
+          <MegaphoneIcon className="w-4 h-4" /> Campaigns
         </button>
       </div>
 
       {/* ── Templates Tab (Admin only) ──────────────────────────────────────── */}
       {tab === 'templates' && role === 'Admin' && (
-        <Card className="rounded-2xl border-none shadow-sm">
-          <CardHeader className="p-6 border-b border-slate-50">
-            <CardTitle className="text-base font-extrabold text-slate-800">Vaccination Templates</CardTitle>
+        <Card className="rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+          <CardHeader className="p-6 pb-4 border-b border-slate-50 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20 text-white shrink-0">
+                <FileTextIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <CardTitle className="text-[17px] font-extrabold text-slate-800">Vaccination Templates</CardTitle>
+                <p className="text-sm text-slate-500 mt-0.5">Create and manage vaccination templates for different animals</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-9 px-3 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold">
+                <FilterIcon className="w-4 h-4 mr-2" /> Filter
+              </Button>
+              <Button variant="outline" size="sm" className="h-9 px-3 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold">
+                <ArrowUpDownIcon className="w-4 h-4 mr-2" /> Sort by
+              </Button>
+              <Button variant="outline" size="sm" className="h-9 w-9 p-0 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center">
+                <MoreVerticalIcon className="w-4 h-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {templates.length === 0 ? (
               <div className="p-8 text-center text-slate-500 text-sm">Template ma jirto weli. Ku dar mid cusub.</div>
             ) : (
-              <div className="divide-y divide-slate-50">
+              <div className="divide-y divide-slate-100/60">
                 {/* Table Header */}
-                <div className="grid grid-cols-7 px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                <div className="grid grid-cols-7 px-8 py-3.5 bg-slate-50/50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   <span className="col-span-2">Campaign</span>
                   <span>Animal</span>
                   <span>Vaccine</span>
@@ -538,30 +606,58 @@ export default function RoutineVaccinationPage() {
                   <span className="text-right">Actions</span>
                 </div>
                 {templates.map(t => (
-                  <div key={t.id} className="grid grid-cols-7 px-6 py-4 items-center hover:bg-slate-50 transition-colors">
-                    <div className="col-span-2">
-                      <div className="font-bold text-slate-800 text-sm">{t.campaign_name}</div>
-                      <div className="text-[11px] text-slate-400">Start: {new Date(t.start_date).toLocaleDateString()}</div>
+                  <div key={t.id} className="grid grid-cols-7 px-8 py-5 items-center hover:bg-slate-50/50 transition-colors">
+                    <div className="col-span-2 flex items-start gap-2.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-2 shrink-0" />
+                      <div>
+                        <div className="font-extrabold text-slate-800 text-[13px]">{t.campaign_name}</div>
+                        <div className="text-[12px] font-medium text-slate-400 mt-0.5">Start: {new Date(t.start_date).toLocaleDateString()}</div>
+                      </div>
                     </div>
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                      <AnimalEmoji type={t.animal_type} /> {t.animal_type}
+                    <span className="flex items-center gap-3 text-[13px] font-semibold text-slate-700">
+                      <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center border border-orange-100/50 shrink-0">
+                        <AnimalEmoji type={t.animal_type} />
+                      </div>
+                      {t.animal_type}
                     </span>
-                    <span className="text-sm text-slate-600">{t.vaccine?.vaccine_name}</span>
-                    <span className="text-sm text-slate-600">Every {t.frequency_months} months</span>
-                    <StatusBadge status={t.status} />
-                    <div className="flex justify-end gap-1">
-                      <button onClick={() => openEditTemplate(t)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors">
+                    <span className="text-[13px] font-medium text-slate-600">{t.vaccine?.vaccine_name}</span>
+                    <span className="text-[13px] font-medium text-slate-600">Every {t.frequency_months} months</span>
+                    <div>
+                      <StatusBadge status={t.status} />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => openEditTemplate(t)} className="w-9 h-9 flex items-center justify-center text-blue-600 border border-slate-200 hover:border-blue-200 hover:bg-blue-50 rounded-xl transition-all bg-white shadow-sm">
                         <PencilIcon className="w-4 h-4" />
                       </button>
-                      <button onClick={() => toggleStatus(t)} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors" title={t.status === 'Active' ? 'Deactivate' : 'Activate'}>
+                      <button onClick={() => toggleStatus(t)} className="w-9 h-9 flex items-center justify-center text-orange-500 border border-slate-200 hover:border-orange-200 hover:bg-orange-50 rounded-xl transition-all bg-white shadow-sm" title={t.status === 'Active' ? 'Deactivate' : 'Activate'}>
                         <PowerIcon className="w-4 h-4" />
                       </button>
-                      <button onClick={() => deleteTemplate(t.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors">
+                      <button onClick={() => deleteTemplate(t.id)} className="w-9 h-9 flex items-center justify-center text-red-500 border border-slate-200 hover:border-red-200 hover:bg-red-50 rounded-xl transition-all bg-white shadow-sm">
                         <TrashIcon className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+            
+            {/* Pagination Footer */}
+            {templates.length > 0 && (
+              <div className="px-8 py-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="text-[13px] font-medium text-slate-500">
+                  Showing 1 to {templates.length} of {templates.length} templates
+                </div>
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" className="w-8 h-8 p-0 rounded-lg border-slate-200 text-slate-400">
+                    <ChevronRightIcon className="w-4 h-4 rotate-180" />
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-8 h-8 p-0 rounded-lg bg-blue-600 border-blue-600 text-white hover:bg-blue-700 hover:text-white">
+                    1
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-8 h-8 p-0 rounded-lg border-slate-200 text-slate-400">
+                    <ChevronRightIcon className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -709,7 +805,7 @@ export default function RoutineVaccinationPage() {
                   <AnimalEmoji type={selectedCampaign?.animal_type || ''} />
                 </div>
                 <div>
-                  <p className="font-extrabold text-sm leading-tight">{selectedCampaign?.campaign_name}</p>
+                  <p className="font-extrabold text-sm leading-tight">{fullVaccineName(selectedCampaign?.campaign_name)}</p>
                   <p className="mt-1 text-[11px] text-emerald-700/90 leading-relaxed">
                     Select specific <strong>{selectedCampaign?.animal_type}</strong> animals to vaccinate now. You can complete in batches.
                   </p>
@@ -798,6 +894,34 @@ export default function RoutineVaccinationPage() {
                 </p>
               </div>
 
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Next Due Date</label>
+                <div className="relative">
+                  <CalendarIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="date"
+                    readOnly
+                    tabIndex={-1}
+                    className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm bg-slate-50 text-slate-600 cursor-not-allowed focus:outline-none"
+                    value={
+                      addMonthsYmd(
+                        completeForm.date_administered,
+                        completeDetails?.template?.frequency_months ||
+                          (selectedCampaign as CampaignDetails | null)?.template?.frequency_months ||
+                          0
+                      )
+                    }
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Auto-calculated (Date Administered + every{" "}
+                  {completeDetails?.template?.frequency_months ||
+                    (selectedCampaign as CampaignDetails | null)?.template?.frequency_months ||
+                    "—"}{" "}
+                  month(s)). Read only.
+                </p>
+              </div>
+
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-2.5 text-xs text-amber-800 flex gap-2">
                 <InfoIcon className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
                 <span>Stock will be reduced only for selected animals vaccinated in this batch.</span>
@@ -845,42 +969,108 @@ export default function RoutineVaccinationPage() {
               <div className="flex-1 min-h-0 overflow-y-auto border border-slate-200 rounded-2xl bg-white divide-y divide-slate-50">
                 {(completeDetails?.animals || [])
                   .filter(a => {
+                    // Hide already vaccinated animals — only show those needing vaccination
+                    if (completeDetails?.vaccinated_animal_ids.includes(a.animal_id)) return false
                     const q = animalSearch.trim().toLowerCase()
                     if (!q) return true
                     return (
                       String(a.animal_id).includes(q) ||
                       (a.nickname || '').toLowerCase().includes(q) ||
-                      (a.farm?.farm_name || '').toLowerCase().includes(q)
+                      (a.farm?.farm_name || '').toLowerCase().includes(q) ||
+                      (a.animal_type || '').toLowerCase().includes(q) ||
+                      (a.biological_type || '').toLowerCase().includes(q)
                     )
                   })
                   .map(a => {
                     const alreadyVaccinated = completeDetails?.vaccinated_animal_ids.includes(a.animal_id)
                     const checked = selectedAnimalIds.includes(a.animal_id)
+                    // Latest record for this animal in this campaign (for the details panel)
+                    const record = alreadyVaccinated
+                      ? [...(completeDetails?.records || [])]
+                          .filter(r => r.animal_id === a.animal_id)
+                          .sort((x, y) => new Date(y.date_administered).getTime() - new Date(x.date_administered).getTime())[0]
+                      : undefined
+                    const isExpanded = expandedRecordAnimalId === a.animal_id
                     return (
-                      <label
-                        key={a.animal_id}
-                        className={`flex items-center gap-3 px-3 py-2 text-sm ${
-                          alreadyVaccinated
-                            ? 'bg-slate-50 text-slate-400'
-                            : 'hover:bg-slate-50 cursor-pointer'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4 accent-emerald-600 rounded"
-                          checked={checked}
-                          disabled={alreadyVaccinated}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelectedAnimalIds(prev => Array.from(new Set([...prev, a.animal_id])))
-                            else setSelectedAnimalIds(prev => prev.filter(id => id !== a.animal_id))
-                          }}
-                        />
-                        <span className="font-bold text-slate-700 shrink-0">#{a.animal_id}</span>
-                        <span className="text-slate-700 truncate">{a.nickname || 'Unnamed'}</span>
-                        <span className="ml-auto text-xs text-slate-400 truncate max-w-[40%] text-right">
-                          {alreadyVaccinated ? 'already vaccinated' : (a.farm?.farm_name || 'No farm')}
-                        </span>
-                      </label>
+                      <div key={a.animal_id}>
+                        <label
+                          className={`flex items-center gap-3 px-3 py-2 text-sm ${
+                            alreadyVaccinated
+                              ? 'bg-slate-50 text-slate-400'
+                              : 'hover:bg-slate-50 cursor-pointer'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-emerald-600 rounded"
+                            checked={checked}
+                            disabled={alreadyVaccinated}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedAnimalIds(prev => Array.from(new Set([...prev, a.animal_id])))
+                              else setSelectedAnimalIds(prev => prev.filter(id => id !== a.animal_id))
+                            }}
+                          />
+                          <span className="font-bold text-slate-700 shrink-0">#{a.animal_id}</span>
+                          <span className="flex flex-col min-w-0">
+                            <span className={`truncate font-semibold ${alreadyVaccinated ? 'text-slate-400' : 'text-slate-700'}`}>
+                              {a.nickname || 'Unnamed'}
+                            </span>
+                            <span className="text-[11px] text-slate-400 truncate">
+                              {a.animal_type}{a.biological_type ? ` · ${a.biological_type}` : ''}{a.age != null && a.age > 0 ? ` · ${formatAnimalAge(a.age)}` : ''}
+                            </span>
+                          </span>
+                          {alreadyVaccinated ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                setExpandedRecordAnimalId(isExpanded ? null : a.animal_id)
+                              }}
+                              className={`ml-auto inline-flex items-center gap-1 text-xs shrink-0 cursor-pointer transition-colors ${
+                                isExpanded ? 'text-slate-600 font-semibold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            >
+                              already vaccinated
+                              <ChevronRightIcon className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                            </button>
+                          ) : (
+                            <span className="ml-auto text-xs text-slate-400 truncate max-w-[35%] text-right shrink-0">
+                              {a.farm?.farm_name || 'No farm'}
+                            </span>
+                          )}
+                        </label>
+
+                        {alreadyVaccinated && isExpanded && (
+                          <div className="mx-3 mb-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+                            {record ? (
+                              <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
+                                <div>
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Vaccine</p>
+                                  <p className="font-bold text-slate-700">{record.vaccine?.vaccine_name || completeDetails?.vaccine?.vaccine_name || '—'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Given By</p>
+                                  <p className="font-bold text-slate-700">{record.administered_user?.full_name || '—'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Dose</p>
+                                  <p className="font-bold text-slate-700">{record.dosage_ml != null ? `${record.dosage_ml} ml` : '—'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Date Given</p>
+                                  <p className="font-bold text-slate-700">{new Date(record.date_administered).toLocaleDateString()}</p>
+                                </div>
+                                <div className="col-span-2">
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Next Due</p>
+                                  <p className="font-bold text-blue-600">{new Date(record.next_due_date).toLocaleDateString()}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-slate-400">No record details found.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 {(completeDetails?.animals || []).length === 0 && (
@@ -914,108 +1104,136 @@ export default function RoutineVaccinationPage() {
 
       {/* ── Dialog: Campaign Details (Vaccinated Animals) ───────────────────── */}
       <Dialog open={detailsDialog} onOpenChange={setDetailsDialog}>
-        <DialogContent className="max-w-2xl rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-extrabold flex items-center gap-2">
-              <SyringeIcon className="w-5 h-5 text-blue-600" />
-              {selectedCampaign?.campaign_name} – {selectedCampaign?.animal_type}
+        <DialogContent
+          className="!w-[min(920px,94vw)] !max-w-[920px] sm:!max-w-[920px] rounded-2xl border border-slate-100/80 shadow-[0_25px_80px_-20px_rgba(15,23,42,0.35)] !p-0 !gap-0 flex flex-col overflow-hidden bg-white"
+        >
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-slate-100 text-left shrink-0">
+            <DialogTitle className="text-lg font-extrabold text-slate-900 flex items-start gap-3 pr-10">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                <SyringeIcon className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="leading-snug whitespace-normal break-words">
+                  {fullVaccineName(selectedCampaign?.campaign_name) || selectedCampaign?.campaign_name}
+                  {selectedCampaign?.animal_type ? ` – ${selectedCampaign.animal_type}` : ""}
+                </div>
+                {detailsData?.template?.frequency_months ? (
+                  <p className="text-xs font-medium text-slate-500 mt-1">
+                    Frequency: every {detailsData.template.frequency_months} month(s)
+                  </p>
+                ) : null}
+              </div>
             </DialogTitle>
-            {detailsData?.template?.frequency_months && (
-              <p className="text-xs text-slate-500 mt-1">
-                Frequency: every <span className="font-semibold">{detailsData.template.frequency_months}</span> month(s)
-              </p>
-            )}
           </DialogHeader>
 
           {detailsLoading ? (
-            <div className="py-10 text-center text-slate-400 text-sm">Loading...</div>
+            <div className="py-16 text-center text-slate-400 text-sm">Loading...</div>
           ) : !detailsData ? (
-            <div className="py-10 text-center text-slate-400 text-sm">No data found.</div>
+            <div className="py-16 text-center text-slate-400 text-sm">No data found.</div>
           ) : (
-            <div className="py-2 space-y-4">
-              {/* Summary */}
-              <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-xl text-center">
-                <div>
-                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Status</div>
-                  <div className="text-sm font-bold text-slate-700">{detailsData.status}</div>
-                </div>
-                <div className="border-x border-slate-200">
-                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Vaccinated</div>
-                  <div className="text-sm font-bold text-teal-600">{detailsData.records.length}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-slate-400 font-semibold uppercase">
-                    {detailsData.status === 'Completed' ? 'Date' : 'Eligible'}
+            <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
+              {/* Summary cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-2xl bg-blue-50 border border-blue-100 px-4 py-3.5 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/80 flex items-center justify-center shrink-0">
+                    <ClockIcon className="w-4 h-4 text-blue-600" />
                   </div>
-                  <div className="text-sm font-bold text-slate-700">
-                    {detailsData.completed_date
-                      ? new Date(detailsData.completed_date).toLocaleDateString()
-                      : detailsData.animals.length}
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</div>
+                    <div className="text-sm font-extrabold text-blue-700">{detailsData.status}</div>
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3.5 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/80 flex items-center justify-center shrink-0">
+                    <ShieldCheckIcon className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Vaccinated</div>
+                    <div className="text-sm font-extrabold text-emerald-700">{detailsData.records.length}</div>
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-violet-50 border border-violet-100 px-4 py-3.5 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/80 flex items-center justify-center shrink-0">
+                    <UsersIcon className="w-4 h-4 text-violet-600" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Eligible</div>
+                    <div className="text-sm font-extrabold text-violet-700">{detailsData.animals.length}</div>
                   </div>
                 </div>
               </div>
 
-              {detailsData.records.length > 0 ? (
-                <div>
-                  <h4 className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
-                    <CheckCircleIcon className="w-4 h-4 text-teal-500" /> Vaccinated Animals ({detailsData.records.length})
-                  </h4>
-                  <div className="border border-slate-100 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                    <div className="grid grid-cols-5 px-3 py-2 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-400 sticky top-0">
-                      <span>Animal</span>
-                      <span>Farm</span>
-                      <span>Given On</span>
-                      <span>Dose</span>
-                      <span>Next Due</span>
-                    </div>
-                    {detailsData.records.map(r => (
-                      <div key={r.id} className="grid grid-cols-5 px-3 py-2 text-xs items-center border-t border-slate-50">
-                        <span className="font-medium text-slate-700 flex items-center gap-1.5">
-                          <AnimalEmoji type={r.animal?.animal_type || detailsData.animal_type} />
-                          {r.animal?.nickname || `#${r.animal_id}`}
-                        </span>
-                        <span className="text-slate-500">{r.animal?.farm?.farm_name || '—'}</span>
-                        <span className="text-slate-600">{new Date(r.date_administered).toLocaleDateString()}</span>
-                        <span className="text-slate-600">{r.dosage_ml == null ? '—' : `${r.dosage_ml} ml`}</span>
-                        <span className="text-slate-600">{new Date(r.next_due_date).toLocaleDateString()}</span>
-                      </div>
-                    ))}
+              {/* Vaccinated animals table only */}
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-800 mb-3 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                    <CheckCircleIcon className="w-3.5 h-3.5" />
+                  </span>
+                  Vaccinated Animals ({detailsData.records.length})
+                </h4>
+
+                {detailsData.records.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">
+                    No vaccinated animals yet.
                   </div>
-                </div>
-              ) : (
-                <div>
-                  <h4 className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
-                    <ClockIcon className="w-4 h-4 text-blue-500" /> Eligible Animals ({detailsData.animals.length})
-                  </h4>
-                  {detailsData.animals.length === 0 ? (
-                    <div className="text-sm text-slate-400 text-center py-6">No eligible animals.</div>
-                  ) : (
-                    <div className="border border-slate-100 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                      <div className="grid grid-cols-3 px-3 py-2 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-400 sticky top-0">
-                        <span>Animal</span>
-                        <span>Farm</span>
-                        <span>Age</span>
-                      </div>
-                      {detailsData.animals.map(a => (
-                        <div key={a.animal_id} className="grid grid-cols-3 px-3 py-2 text-xs items-center border-t border-slate-50">
-                          <span className="font-medium text-slate-700 flex items-center gap-1.5">
-                            <AnimalEmoji type={a.animal_type} />
-                            {a.nickname || `#${a.animal_id}`}
-                          </span>
-                          <span className="text-slate-500">{a.farm?.farm_name || '—'}</span>
-                          <span className="text-slate-600">{a.age ?? '—'}</span>
-                        </div>
-                      ))}
+                ) : (
+                  <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                    <div className="max-h-80 overflow-auto">
+                      <table className="w-full text-left">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                            <th className="px-4 py-3 font-bold">Animal</th>
+                            <th className="px-4 py-3 font-bold">Farm</th>
+                            <th className="px-4 py-3 font-bold">Given On</th>
+                            <th className="px-4 py-3 font-bold">Dose</th>
+                            <th className="px-4 py-3 font-bold">Next Due</th>
+                            <th className="px-4 py-3 font-bold text-right">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailsData.records.map((r) => (
+                            <tr key={r.id} className="border-t border-slate-50 text-[13px]">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2 font-semibold text-slate-800">
+                                  <span className="w-7 h-7 rounded-full bg-emerald-50 flex items-center justify-center text-sm">
+                                    <AnimalEmoji type={r.animal?.animal_type || detailsData.animal_type} />
+                                  </span>
+                                  {r.animal?.nickname || `#${r.animal_id}`}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{r.animal?.farm?.farm_name || "—"}</td>
+                              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{new Date(r.date_administered).toLocaleDateString()}</td>
+                              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{r.dosage_ml == null ? "—" : `${r.dosage_ml} ml`}</td>
+                              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{new Date(r.next_due_date).toLocaleDateString()}</td>
+                              <td className="px-4 py-3 text-right">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                  Completed
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDetailsDialog(false)} className="rounded-xl">Close</Button>
-          </DialogFooter>
+          <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
+            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+              <InfoIcon className="w-3.5 h-3.5" />
+              Total records: {detailsData?.records.length ?? 0}
+            </p>
+            <Button
+              onClick={() => setDetailsDialog(false)}
+              className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white h-10 px-5"
+            >
+              <XIcon className="w-4 h-4 mr-1.5" />
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

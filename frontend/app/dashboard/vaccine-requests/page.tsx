@@ -104,10 +104,15 @@ export default function VaccineRequestsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">Vaccine Requests</h2>
-          <p className="text-slate-500 mt-1.5 text-sm font-medium">Request additional vaccines when stock is running low.</p>
+          <p className="text-slate-500 mt-1.5 text-sm font-medium">
+            {role === 'Doctor'
+              ? 'Request additional vaccines when stock is running low.'
+              : 'Review vaccine requests submitted by doctors.'}
+          </p>
         </div>
         
-        {canCreate('VaccineRequests', role) && (
+        {/* Only Doctors request vaccines — Admin just reviews and supplies them */}
+        {role === 'Doctor' && canCreate('VaccineRequests', role) && (
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogTrigger asChild>
               <Button className="bg-[#2FA4D7] hover:bg-[#2FA4D7]/90 text-white rounded-xl shadow-md font-semibold px-5 h-10">

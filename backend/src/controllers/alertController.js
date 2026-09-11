@@ -31,7 +31,16 @@ const getAlerts = async (req, res) => {
 
         const alerts = await prisma.alert.findMany({
             where,
-            include: { animal: true, farm: true, user: true },
+            include: { 
+                animal: {
+                    include: {
+                        vaccinations: { orderBy: { date_administered: 'desc' }, take: 1 },
+                        routineRecords: { orderBy: { date_administered: 'desc' }, take: 1 }
+                    }
+                }, 
+                farm: true, 
+                user: true 
+            },
             orderBy: { created_at: 'desc' },
         });
         res.json(alerts);

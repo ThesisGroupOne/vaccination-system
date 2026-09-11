@@ -3,29 +3,100 @@ const prisma = require(path.join(__dirname, '../../config/db'));
 const PDFDocument = require('pdfkit');
 const { logActivity } = require('./activityLogController');
 
+// ── Age helpers (age lives as date_of_birth; years value is computed) ────────
+const AVG_DAYS_PER_MONTH = 30.44;
+
+/** Live age in months from a date of birth */
+function monthsFromDob(dob) {
+  const diffMs = Date.now() - new Date(dob).getTime();
+  if (diffMs <= 0) return 0;
+  return diffMs / (1000 * 60 * 60 * 24 * AVG_DAYS_PER_MONTH);
+}
+
+/** Approximate DOB from an age given in months (registration without exact DOB) */
+function dobFromMonths(months) {
+  const d = new Date();
+  d.setMonth(d.getMonth() - Math.round(months));
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Live age in years (float) — falls back to the stored snapshot */
+function liveAgeYears(animal) {
+  if (animal.date_of_birth) {
+    return parseFloat((monthsFromDob(animal.date_of_birth) / 12).toFixed(4));
+  }
+  return animal.age;
+}
+
 const getAnimals = async (req, res) => {
   try {
     const animals = await prisma.animal.findMany({
       include: {
         farm: true,
-        vaccinations: true,
-        routineRecords: true,
+        vaccinations: {
+          include: { vaccine: true }
+        },
+        routineRecords: {
+          include: { vaccine: true }
+        },
       },
       orderBy: { animal_id: 'desc' },
     });
     // total_doses = emergency/standard + routine (Animals Directory badge)
-    const enriched = animals.map((a) => ({
-      ...a,
-      total_doses: (a.vaccinations?.length || 0) + (a.routineRecords?.length || 0),
-    }));
+    const enriched = animals.map((a) => {
+      let pregnancy_months = null;
+      if (a.is_pregnant && a.pregnancy_start_date) {
+        pregnancy_months = monthsFromDob(a.pregnancy_start_date);
+      }
+      return {
+        ...a,
+        age: liveAgeYears(a),
+        pregnancy_months,
+        total_doses: (a.vaccinations?.length || 0) + (a.routineRecords?.length || 0),
+      };
+    });
     res.json(enriched);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 };
 
+/**
+ * Resolve DOB + validated age from request body.
+ * Accepts either `date_of_birth` (calendar) or `age_months` (plain value).
+ * Returns { dob, ageMonths } or { error }.
+ */
+function resolveDobAndAge({ date_of_birth, age_months }, animal_type) {
+  let minMonths = 1;
+  if (animal_type === 'Goat') minMonths = 3;
+  else if (animal_type === 'Cattle') minMonths = 4;
+  else if (animal_type === 'Camel') minMonths = 6;
+
+  let dob;
+  if (date_of_birth) {
+    dob = new Date(date_of_birth);
+    if (Number.isNaN(dob.getTime())) {
+      return { error: 'Invalid date of birth.' };
+    }
+    if (dob.getTime() > Date.now()) {
+      return { error: 'Date of birth cannot be in the future.' };
+    }
+  } else if (typeof age_months === 'number' && Number.isFinite(age_months)) {
+    dob = dobFromMonths(age_months);
+  } else {
+    return { error: 'Provide either age or date of birth.' };
+  }
+
+  const ageMonths = monthsFromDob(dob);
+  if (ageMonths < minMonths || ageMonths > 180) {
+    return { error: `Age must be between ${minMonths} and 180 months for ${animal_type}` };
+  }
+  return { dob, ageMonths };
+}
+
 const createAnimal = async (req, res) => {
-  const { nickname, animal_type, age_months, weight, biological_type, is_pregnant, farm_id, status } = req.body;
+  const { nickname, animal_type, age_months, date_of_birth, weight, biological_type, is_pregnant, pregnancy_start_date: req_pregnancy_start_date, farm_id, status } = req.body;
 
   // Allowed values
   const allowedAnimalTypes = ['Camel', 'Cattle', 'Goat'];
@@ -35,15 +106,6 @@ const createAnimal = async (req, res) => {
     'Nirig (Female)', 'Awr (Male)',      // Camel
   ];
 
-  let minMonths = 1;
-  if (animal_type === 'Goat') minMonths = 3;
-  else if (animal_type === 'Cattle') minMonths = 4;
-  else if (animal_type === 'Camel') minMonths = 6;
-
-  // Age validation: must be between minMonths and 180 months (15 years)
-  if (typeof age_months !== 'number' || age_months < minMonths || age_months > 180) {
-    return res.status(400).json({ error: `Age must be between ${minMonths} and 180 months for ${animal_type}` });
-  }
   // Nickname validation: letters and spaces only
   if (nickname && !/^[a-zA-Z\s]+$/.test(nickname)) {
     return res.status(400).json({ error: 'Nickname may contain only letters and spaces' });
@@ -57,16 +119,22 @@ const createAnimal = async (req, res) => {
     return res.status(400).json({ error: `Invalid biological type. Allowed: ${allowedBiologicalTypes.join(', ')}` });
   }
 
-  // Convert months to years for storage
-  const age = parseFloat((age_months / 12).toFixed(4));
+  const resolved = resolveDobAndAge({ date_of_birth, age_months }, animal_type);
+  if (resolved.error) return res.status(400).json({ error: resolved.error });
+
+  // Age snapshot in years (legacy column); live age is always derived from DOB
+  const age = parseFloat((resolved.ageMonths / 12).toFixed(4));
 
   try {
+    const pregnancy_start_date = is_pregnant 
+      ? (req_pregnancy_start_date ? new Date(req_pregnancy_start_date) : new Date()) 
+      : null;
     const animal = await prisma.animal.create({
-      data: { nickname, animal_type, age, weight, biological_type, is_pregnant, farm_id, status: status || 'Active' },
+      data: { nickname, animal_type, age, date_of_birth: resolved.dob, weight, biological_type, is_pregnant, pregnancy_start_date, farm_id, status: status || 'Active' },
     });
     await logActivity({
       action: 'CREATE', entity: 'Animal', entity_id: animal.animal_id,
-      description: `Registered new ${animal_type} "${nickname || 'Unnamed'}" (Age: ${age_months} months, Bio: ${biological_type})`,
+      description: `Registered new ${animal_type} "${nickname || 'Unnamed'}" (Age: ${Math.round(resolved.ageMonths)} months, DOB: ${resolved.dob.toISOString().slice(0, 10)}, Bio: ${biological_type})`,
       user_id: req.user?.userId, user_name: req.user?.name, user_role: req.user?.role,
     });
     res.status(201).json(animal);
@@ -77,7 +145,7 @@ const createAnimal = async (req, res) => {
 
 const updateAnimal = async (req, res) => {
   const { id } = req.params;
-  const { nickname, animal_type, age_months, weight, biological_type, is_pregnant, farm_id, status } = req.body;
+  const { nickname, animal_type, age_months, date_of_birth, weight, biological_type, is_pregnant, pregnancy_start_date: req_pregnancy_start_date, farm_id, status } = req.body;
 
   // Allowed values
   const allowedAnimalTypes = ['Camel', 'Cattle', 'Goat'];
@@ -87,18 +155,6 @@ const updateAnimal = async (req, res) => {
     'Nirig (Female)', 'Awr (Male)',      // Camel
   ];
 
-  let minMonths = 1;
-  if (animal_type === 'Goat') minMonths = 3;
-  else if (animal_type === 'Cattle') minMonths = 4;
-  else if (animal_type === 'Camel') minMonths = 6;
-
-  let age;
-  if (age_months !== undefined) {
-    if (typeof age_months !== 'number' || age_months < minMonths || age_months > 180) {
-      return res.status(400).json({ error: `Age must be between ${minMonths} and 180 months for ${animal_type}` });
-    }
-    age = parseFloat((age_months / 12).toFixed(4));
-  }
   if (nickname && !/^[a-zA-Z\s]+$/.test(nickname)) {
     return res.status(400).json({ error: 'Nickname may contain only letters and spaces' });
   }
@@ -111,10 +167,32 @@ const updateAnimal = async (req, res) => {
     return res.status(400).json({ error: `Invalid biological type. Allowed: ${allowedBiologicalTypes.join(', ')}` });
   }
 
+  let age;
+  let dob;
+  if (date_of_birth !== undefined || age_months !== undefined) {
+    const resolved = resolveDobAndAge({ date_of_birth, age_months }, animal_type);
+    if (resolved.error) return res.status(400).json({ error: resolved.error });
+    dob = resolved.dob;
+    age = parseFloat((resolved.ageMonths / 12).toFixed(4));
+  }
+
   try {
+    const existing = await prisma.animal.findUnique({ where: { animal_id: parseInt(id) } });
+    let pregnancy_start_date = existing ? existing.pregnancy_start_date : null;
+    
+    if (is_pregnant === true) {
+      if (req_pregnancy_start_date) {
+        pregnancy_start_date = new Date(req_pregnancy_start_date);
+      } else if (!existing || !existing.is_pregnant) {
+        pregnancy_start_date = new Date();
+      }
+    } else if (is_pregnant === false) {
+      pregnancy_start_date = null;
+    }
+
     const animal = await prisma.animal.update({
       where: { animal_id: parseInt(id) },
-      data: { nickname, animal_type, age, weight, biological_type, is_pregnant, farm_id, status },
+      data: { nickname, animal_type, age, date_of_birth: dob, weight, biological_type, is_pregnant, pregnancy_start_date, farm_id, status },
     });
     await logActivity({
       action: 'UPDATE', entity: 'Animal', entity_id: animal.animal_id,
@@ -128,17 +206,48 @@ const updateAnimal = async (req, res) => {
 };
 
 const deleteAnimal = async (req, res) => {
-  const { id } = req.params;
+  const animalId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(animalId)) {
+    return res.status(400).json({ error: 'Invalid animal id.' });
+  }
+
   try {
-    await prisma.animal.delete({ where: { animal_id: parseInt(id) } });
+    const animal = await prisma.animal.findUnique({ where: { animal_id: animalId } });
+    if (!animal) {
+      return res.status(404).json({ error: 'Animal not found.' });
+    }
+
+    // Cascade related rows first — hard delete fails when doses/alerts/schedules exist
+    await prisma.$transaction(async (tx) => {
+      const schedules = await tx.vaccinationSchedule.findMany({
+        where: { animal_id: animalId },
+        select: { schedule_id: true },
+      });
+      const scheduleIds = schedules.map((s) => s.schedule_id);
+      if (scheduleIds.length) {
+        await tx.taskDelegation.deleteMany({ where: { schedule_id: { in: scheduleIds } } });
+      }
+
+      await tx.mortalityRecord.deleteMany({ where: { animal_id: animalId } });
+      await tx.vaccination.deleteMany({ where: { animal_id: animalId } });
+      await tx.routineVaccinationRecord.deleteMany({ where: { animal_id: animalId } });
+      await tx.alert.deleteMany({ where: { animal_id: animalId } });
+      await tx.vaccinationSchedule.deleteMany({ where: { animal_id: animalId } });
+      await tx.animal.delete({ where: { animal_id: animalId } });
+    });
+
     await logActivity({
-      action: 'DELETE', entity: 'Animal', entity_id: parseInt(id),
-      description: `Deleted animal #${id}`,
-      user_id: req.user?.userId, user_name: req.user?.name, user_role: req.user?.role,
+      action: 'DELETE',
+      entity: 'Animal',
+      entity_id: animalId,
+      description: `Deleted animal #${animalId}${animal.nickname ? ` (${animal.nickname})` : ''}`,
+      user_id: req.user?.userId,
+      user_name: req.user?.name,
+      user_role: req.user?.role,
     });
     res.status(204).send();
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error.message || 'Failed to delete animal.' });
   }
 };
 

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import Select from 'react-select';
 import { Loader2Icon, AlertCircleIcon, SendIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -14,6 +14,7 @@ interface Animal {
     animal_id: number;
     nickname?: string;
     animal_type: string;
+    biological_type?: string;
     status: string;
     farm_id: number;
 }
@@ -97,6 +98,36 @@ export default function ReportIssueForm() {
         }
     };
 
+    const animalOptions = animals.map(animal => ({
+        value: animal.animal_id.toString(),
+        label: `${animal.nickname || 'Unnamed'} (${animal.animal_type}) - #${animal.animal_id}`,
+        animal: animal
+    }));
+
+    const formatOptionLabel = ({ animal }: { animal: Animal }) => {
+        let genderLabel = animal.biological_type;
+        if (genderLabel) {
+            const lower = genderLabel.toLowerCase();
+            if (lower.includes('female')) genderLabel = 'Female';
+            else if (lower.includes('male')) genderLabel = 'Male';
+        }
+
+        return (
+            <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold rounded-full px-2 py-0.5 bg-slate-50 border-slate-200">#{animal.animal_id}</Badge>
+                    <span className="font-bold text-slate-800">{animal.nickname || 'Unnamed'}</span>
+                    <span className="text-[10px] text-slate-500 font-medium">({animal.animal_type})</span>
+                </div>
+                {genderLabel && genderLabel !== 'Unknown' && (
+                    <span className="text-[10px] uppercase font-bold text-slate-400">
+                        {genderLabel}
+                    </span>
+                )}
+            </div>
+        );
+    };
+
     return (
         <Card className="rounded-[20px] border-none shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] bg-white overflow-hidden">
             <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-gray-50 p-6 bg-white">
@@ -114,29 +145,45 @@ export default function ReportIssueForm() {
                 <div className="space-y-2">
                     <Label htmlFor="animal" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Select Animal</Label>
                     <Select
-                        value={formData.animal_id}
-                        onValueChange={v => setFormData({ ...formData, animal_id: v })}
-                        disabled={isLoadingAnimals}
-                    >
-                        <SelectTrigger className="rounded-xl bg-gray-50/50 border border-gray-200 h-11 text-xs font-medium focus-visible:ring-amber-500">
-                            <SelectValue placeholder={isLoadingAnimals ? "Loading animals..." : "Choose an animal"} />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl border-gray-200 shadow-xl bg-white max-h-[300px]">
-                            {animals.map(animal => (
-                                <SelectItem 
-                                    key={animal.animal_id} 
-                                    value={animal.animal_id.toString()}
-                                    className="rounded-lg m-1 cursor-pointer py-2 text-xs font-bold hover:bg-slate-50"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold rounded-full px-2 py-0.5 bg-slate-50 border-slate-200">#{animal.animal_id}</Badge>
-                                        <span className="font-bold text-slate-800">{animal.nickname || 'Unnamed'}</span>
-                                        <span className="text-[10px] text-slate-500 font-medium">({animal.animal_type})</span>
-                                    </div>
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                        options={animalOptions}
+                        // @ts-expect-error - react-select types for formatOptionLabel are generic
+                        formatOptionLabel={formatOptionLabel}
+                        value={animalOptions.find(o => o.value === formData.animal_id) || null}
+                        onChange={(selected: { value: string, label: string, animal: Animal } | null) => setFormData({ ...formData, animal_id: selected?.value || '' })}
+                        isDisabled={isLoadingAnimals}
+                        placeholder={isLoadingAnimals ? "Loading animals..." : "Choose an animal"}
+                        isSearchable={true}
+                        styles={{
+                            control: (base, state) => ({
+                                ...base,
+                                borderRadius: '0.75rem',
+                                backgroundColor: 'rgba(249, 250, 251, 0.5)',
+                                borderColor: state.isFocused ? '#f59e0b' : '#e5e7eb',
+                                boxShadow: state.isFocused ? '0 0 0 1px #f59e0b' : 'none',
+                                minHeight: '44px',
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                '&:hover': {
+                                    borderColor: state.isFocused ? '#f59e0b' : '#d1d5db',
+                                }
+                            }),
+                            menu: (base) => ({
+                                ...base,
+                                borderRadius: '0.75rem',
+                                overflow: 'hidden',
+                                zIndex: 50,
+                            }),
+                            option: (base, state) => ({
+                                ...base,
+                                backgroundColor: state.isSelected ? '#fffbeb' : state.isFocused ? '#f8fafc' : 'white',
+                                color: state.isSelected ? '#92400e' : 'inherit',
+                                cursor: 'pointer',
+                                ':active': {
+                                    backgroundColor: '#fef3c7',
+                                }
+                            })
+                        }}
+                    />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="symptoms" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Observations / Symptoms</Label>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { BellIcon, SearchIcon, ChevronDownIcon, LogOutIcon, AlertCircleIcon, CalendarClockIcon, PackageMinusIcon } from "lucide-react"
+import { BellIcon, SearchIcon, ChevronDownIcon, LogOutIcon, UserIcon, AlertCircleIcon, CalendarClockIcon, PackageMinusIcon } from "lucide-react"
 import { useEffect, useState, useRef } from "react"
 
 interface Reminder {
@@ -41,7 +41,8 @@ export default function Navbar() {
         if (!token) {
           return;
         }
-        const res = await fetch('http://localhost:9999/api/reminders', {
+        const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9999';
+        const res = await fetch(`${API}/api/reminders`, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}` },
         });
@@ -175,10 +176,17 @@ export default function Navbar() {
            
            <ChevronDownIcon className="w-4 h-4 text-slate-400" />
 
-           <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-slate-100 rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+           <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-slate-100 rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden p-1">
+              <button
+                onClick={() => router.push('/dashboard/settings')}
+                className="flex items-center gap-2 w-full text-left px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors"
+              >
+                <UserIcon className="w-4 h-4" />
+                My Profile
+              </button>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-2 w-full text-left px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                className="flex items-center gap-2 w-full text-left px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               >
                 <LogOutIcon className="w-4 h-4" />
                 Logout

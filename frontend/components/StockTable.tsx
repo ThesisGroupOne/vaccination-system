@@ -7,10 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Loader2Icon, AlertTriangleIcon, PackageIcon, PlusIcon, EditIcon, TrashIcon, MoreHorizontalIcon } from 'lucide-react';
+import { Loader2Icon, AlertTriangleIcon, PackageIcon, PlusIcon, EditIcon, TrashIcon, MoreHorizontalIcon, SyringeIcon, UserIcon, HashIcon, BeakerIcon, DollarSignIcon, CalendarIcon, SaveIcon } from 'lucide-react';
+import ReactSelect from 'react-select';
 import { toast } from 'sonner';
 import { canEdit } from '@/lib/permissions';
 
@@ -239,61 +240,109 @@ export default function StockTable() {
             <DialogContent className="sm:max-w-[500px] rounded-[24px] border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] bg-white p-6">
               <form onSubmit={handleAddStock}>
                 <DialogHeader className="mb-4">
-                  <DialogTitle className="text-xl font-extrabold text-slate-800">Register New Stock</DialogTitle>
-                  <DialogDescription className="text-xs text-slate-500 font-medium">Enter the details for the new vaccine batch.</DialogDescription>
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <PackageIcon className="w-6 h-6" />
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <DialogTitle className="text-xl font-extrabold text-slate-800">Register New Stock</DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500 font-medium mt-1">Enter the details for the new vaccine batch.</DialogDescription>
+                    </div>
+                  </div>
                 </DialogHeader>
                 <div className="grid gap-4 py-2">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Vaccine</Label>
-                      <Select value={formData.vaccine_id} onValueChange={(v) => setFormData({...formData, vaccine_id: v})}>
-                        <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
-                          <SelectValue placeholder="Select vaccine" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
-                          {vaccines.map(v => (
-                            <SelectItem key={v.vaccine_id} value={v.vaccine_id.toString()} className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">
-                              {v.vaccine_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Vaccine</Label>
+                      <div className="relative">
+                        <SyringeIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
+                        <ReactSelect
+                          options={vaccines.map(v => ({ value: v.vaccine_id.toString(), label: v.vaccine_name }))}
+                          value={vaccines.map(v => ({ value: v.vaccine_id.toString(), label: v.vaccine_name })).find(o => o.value === formData.vaccine_id) || null}
+                          onChange={(selected: { value: string, label: string } | null) => setFormData({...formData, vaccine_id: selected?.value || ''})}
+                          placeholder="Select vaccine"
+                          isSearchable
+                          styles={{
+                              control: (base, state) => ({
+                                  ...base,
+                                  borderRadius: '0.75rem',
+                                  borderColor: state.isFocused ? '#2FA4D7' : '#e2e8f0',
+                                  boxShadow: state.isFocused ? '0 0 0 2px rgba(47, 164, 215, 0.2)' : 'none',
+                                  minHeight: '44px',
+                                  fontSize: '0.875rem',
+                                  '&:hover': {
+                                      borderColor: state.isFocused ? '#2FA4D7' : '#cbd5e1'
+                                  }
+                              }),
+                              valueContainer: (base) => ({ ...base, paddingLeft: '2.25rem' }),
+                              menu: base => ({ ...base, zIndex: 9999 }),
+                              option: (base, state) => ({
+                                  ...base,
+                                  backgroundColor: state.isSelected ? '#2FA4D7' : state.isFocused ? 'rgba(47, 164, 215, 0.1)' : 'white',
+                                  color: state.isSelected ? 'white' : state.isFocused ? '#2FA4D7' : 'inherit',
+                                  cursor: 'pointer',
+                                  fontSize: '0.875rem',
+                              })
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Supplier Name</Label>
-                      <Input required placeholder="e.g. Mumin Meds" className="rounded-lg bg-muted/20" value={formData.supplier_name} onChange={e => setFormData({...formData, supplier_name: e.target.value})} />
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Supplier Name</Label>
+                      <div className="relative">
+                        <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required placeholder="e.g. Mumin Meds" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.supplier_name} onChange={e => setFormData({...formData, supplier_name: e.target.value})} />
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label>Batch Number</Label>
-                    <Input required placeholder="e.g. BATCH-2026-X" className="rounded-lg bg-muted/20" value={formData.batch_number} onChange={e => setFormData({...formData, batch_number: e.target.value})} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Quantity (Doses)</Label>
-                      <Input required type="number" placeholder="e.g. 1000" className="rounded-lg bg-muted/20" value={formData.quantity_purchased} onChange={e => setFormData({...formData, quantity_purchased: e.target.value})} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Purchase Price ($)</Label>
-                      <Input required type="number" step="0.01" placeholder="e.g. 500" className="rounded-lg bg-muted/20" value={formData.purchase_price} onChange={e => setFormData({...formData, purchase_price: e.target.value})} />
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold text-slate-700 ml-1">Batch Number</Label>
+                    <div className="relative">
+                      <HashIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Input required placeholder="e.g. BATCH-2026-X" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.batch_number} onChange={e => setFormData({...formData, batch_number: e.target.value})} />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Purchase Date</Label>
-                      <Input required type="date" className="rounded-lg bg-muted/20" value={formData.purchase_date} onChange={e => setFormData({...formData, purchase_date: e.target.value})} />
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Quantity (Doses)</Label>
+                      <div className="relative">
+                        <BeakerIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="number" placeholder="e.g. 1000" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.quantity_purchased} onChange={e => setFormData({...formData, quantity_purchased: e.target.value})} />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Expiry Date</Label>
-                      <Input required type="date" className="rounded-lg bg-muted/20" value={formData.expiry_date} onChange={e => setFormData({...formData, expiry_date: e.target.value})} />
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Purchase Price ($)</Label>
+                      <div className="relative">
+                        <DollarSignIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="number" step="0.01" placeholder="e.g. 500" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.purchase_price} onChange={e => setFormData({...formData, purchase_price: e.target.value})} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Purchase Date</Label>
+                      <div className="relative">
+                        <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="date" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.purchase_date} onChange={e => setFormData({...formData, purchase_date: e.target.value})} />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Expiry Date</Label>
+                      <div className="relative">
+                        <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="date" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.expiry_date} onChange={e => setFormData({...formData, expiry_date: e.target.value})} />
+                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="mt-6 flex justify-end">
-                  <Button type="submit" className="bg-brand-primary hover:bg-brand-primary-hover text-white rounded-xl shadow-md w-full font-semibold text-sm h-11">Save Stock Batch</Button>
+                  <Button type="submit" className="bg-brand-primary hover:bg-brand-primary-hover text-white rounded-xl shadow-md w-full font-semibold text-sm h-11 flex items-center justify-center gap-2">
+                    <SaveIcon className="w-4 h-4" />
+                    Save Stock Batch
+                  </Button>
                 </div>
               </form>
             </DialogContent>
@@ -303,61 +352,109 @@ export default function StockTable() {
             <DialogContent className="sm:max-w-[500px] rounded-[24px] border-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] bg-white p-6">
               <form onSubmit={handleEditSave}>
                 <DialogHeader className="mb-4">
-                  <DialogTitle className="text-xl font-extrabold text-slate-800">Edit Stock Record</DialogTitle>
-                  <DialogDescription className="text-xs text-slate-500 font-medium">Update the details for the vaccine batch.</DialogDescription>
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <EditIcon className="w-6 h-6" />
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <DialogTitle className="text-xl font-extrabold text-slate-800">Edit Stock Record</DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500 font-medium mt-1">Update the details for the vaccine batch.</DialogDescription>
+                    </div>
+                  </div>
                 </DialogHeader>
                 <div className="grid gap-4 py-2">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Vaccine</Label>
-                      <Select value={formData.vaccine_id} onValueChange={(v) => setFormData({...formData, vaccine_id: v})}>
-                        <SelectTrigger className="rounded-xl border-slate-200 h-11 bg-white shadow-sm ring-offset-background focus:ring-2 focus:ring-[#2FA4D7] transition-all">
-                          <SelectValue placeholder="Select vaccine" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl border-slate-200 shadow-2xl z-[9999] bg-white overflow-hidden" position="popper" sideOffset={8}>
-                          {vaccines.map(v => (
-                            <SelectItem key={v.vaccine_id} value={v.vaccine_id.toString()} className="rounded-lg m-1 cursor-pointer hover:bg-[#2FA4D7]/10 focus:bg-[#2FA4D7]/10 focus:text-[#2FA4D7] py-2.5 transition-colors font-medium">
-                              {v.vaccine_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Vaccine</Label>
+                      <div className="relative">
+                        <SyringeIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
+                        <ReactSelect
+                          options={vaccines.map(v => ({ value: v.vaccine_id.toString(), label: v.vaccine_name }))}
+                          value={vaccines.map(v => ({ value: v.vaccine_id.toString(), label: v.vaccine_name })).find(o => o.value === formData.vaccine_id) || null}
+                          onChange={(selected: { value: string, label: string } | null) => setFormData({...formData, vaccine_id: selected?.value || ''})}
+                          placeholder="Select vaccine"
+                          isSearchable
+                          styles={{
+                              control: (base, state) => ({
+                                  ...base,
+                                  borderRadius: '0.75rem',
+                                  borderColor: state.isFocused ? '#2FA4D7' : '#e2e8f0',
+                                  boxShadow: state.isFocused ? '0 0 0 2px rgba(47, 164, 215, 0.2)' : 'none',
+                                  minHeight: '44px',
+                                  fontSize: '0.875rem',
+                                  '&:hover': {
+                                      borderColor: state.isFocused ? '#2FA4D7' : '#cbd5e1'
+                                  }
+                              }),
+                              valueContainer: (base) => ({ ...base, paddingLeft: '2.25rem' }),
+                              menu: base => ({ ...base, zIndex: 9999 }),
+                              option: (base, state) => ({
+                                  ...base,
+                                  backgroundColor: state.isSelected ? '#2FA4D7' : state.isFocused ? 'rgba(47, 164, 215, 0.1)' : 'white',
+                                  color: state.isSelected ? 'white' : state.isFocused ? '#2FA4D7' : 'inherit',
+                                  cursor: 'pointer',
+                                  fontSize: '0.875rem',
+                              })
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Supplier Name</Label>
-                      <Input required placeholder="e.g. Mumin Meds" className="rounded-lg bg-muted/20" value={formData.supplier_name} onChange={e => setFormData({...formData, supplier_name: e.target.value})} />
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Supplier Name</Label>
+                      <div className="relative">
+                        <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required placeholder="e.g. Mumin Meds" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.supplier_name} onChange={e => setFormData({...formData, supplier_name: e.target.value})} />
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label>Batch Number</Label>
-                    <Input required placeholder="e.g. BATCH-2026-X" className="rounded-lg bg-muted/20" value={formData.batch_number} onChange={e => setFormData({...formData, batch_number: e.target.value})} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Quantity (Doses)</Label>
-                      <Input required type="number" placeholder="e.g. 1000" className="rounded-lg bg-muted/20" value={formData.quantity_purchased} onChange={e => setFormData({...formData, quantity_purchased: e.target.value})} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Purchase Price ($)</Label>
-                      <Input required type="number" step="0.01" placeholder="e.g. 500" className="rounded-lg bg-muted/20" value={formData.purchase_price} onChange={e => setFormData({...formData, purchase_price: e.target.value})} />
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold text-slate-700 ml-1">Batch Number</Label>
+                    <div className="relative">
+                      <HashIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Input required placeholder="e.g. BATCH-2026-X" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.batch_number} onChange={e => setFormData({...formData, batch_number: e.target.value})} />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Purchase Date</Label>
-                      <Input required type="date" className="rounded-lg bg-muted/20" value={formData.purchase_date} onChange={e => setFormData({...formData, purchase_date: e.target.value})} />
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Quantity (Doses)</Label>
+                      <div className="relative">
+                        <BeakerIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="number" placeholder="e.g. 1000" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.quantity_purchased} onChange={e => setFormData({...formData, quantity_purchased: e.target.value})} />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Expiry Date</Label>
-                      <Input required type="date" className="rounded-lg bg-muted/20" value={formData.expiry_date} onChange={e => setFormData({...formData, expiry_date: e.target.value})} />
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Purchase Price ($)</Label>
+                      <div className="relative">
+                        <DollarSignIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="number" step="0.01" placeholder="e.g. 500" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.purchase_price} onChange={e => setFormData({...formData, purchase_price: e.target.value})} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Purchase Date</Label>
+                      <div className="relative">
+                        <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="date" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.purchase_date} onChange={e => setFormData({...formData, purchase_date: e.target.value})} />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-bold text-slate-700 ml-1">Expiry Date</Label>
+                      <div className="relative">
+                        <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input required type="date" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.expiry_date} onChange={e => setFormData({...formData, expiry_date: e.target.value})} />
+                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="mt-6 flex justify-end">
-                  <Button type="submit" className="bg-brand-primary hover:bg-brand-primary-hover text-white rounded-xl shadow-md w-full font-semibold text-sm h-11">Update Stock Batch</Button>
+                  <Button type="submit" className="bg-brand-primary hover:bg-brand-primary-hover text-white rounded-xl shadow-md w-full font-semibold text-sm h-11 flex items-center justify-center gap-2">
+                    <SaveIcon className="w-4 h-4" />
+                    Save Changes
+                  </Button>
                 </div>
               </form>
             </DialogContent>
@@ -386,7 +483,9 @@ export default function StockTable() {
               </TableRow>
             ) : stocks.length > 0 ? (
               stocks.map((stock) => {
-                const isLow = stock.quantity_remaining < 10;
+                const remaining = Number(stock.quantity_remaining) || 0;
+                const isOut = remaining <= 0;
+                const isLow = remaining > 0 && remaining < 10;
                 const isExpired = new Date(stock.expiry_date) < new Date();
 
                 return (
@@ -400,7 +499,7 @@ export default function StockTable() {
                     <TableCell className="text-slate-500 text-xs font-medium py-3">{stock.supplier_name || 'N/A'}</TableCell>
                     <TableCell className="py-3">
                       <div className="flex items-center gap-2">
-                        <span className={`font-bold text-xs ${isLow ? 'text-orange-500' : 'text-emerald-600'}`}>
+                        <span className={`font-bold text-xs ${isExpired ? 'text-rose-600' : isOut ? 'text-slate-500' : isLow ? 'text-orange-500' : 'text-emerald-600'}`}>
                           {stock.quantity_remaining}
                         </span>
                         <span className="text-[10px] text-slate-400">/ {stock.quantity_purchased} doses</span>
@@ -412,6 +511,10 @@ export default function StockTable() {
                     <TableCell className="text-right py-3">
                       {isExpired ? (
                         <Badge variant="outline" className="rounded-full px-2 py-0.5 border-rose-200 text-rose-600 bg-rose-50 text-[10px] font-bold uppercase tracking-wider">Expired</Badge>
+                      ) : isOut ? (
+                        <Badge variant="outline" className="rounded-full px-2 py-0.5 bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-bold uppercase tracking-wider">
+                          Out of Stock
+                        </Badge>
                       ) : isLow ? (
                         <Badge variant="outline" className="rounded-full px-2 py-0.5 bg-orange-50 text-orange-600 border-orange-200 text-[10px] font-bold uppercase tracking-wider">
                           <AlertTriangleIcon className="h-3 w-3 mr-1" />
