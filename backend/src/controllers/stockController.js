@@ -6,7 +6,7 @@ const getStocks = async (req, res) => {
   try {
     const stocks = await prisma.vaccineStock.findMany({
       where: { is_archived: false },
-      include: { vaccine: true },
+      include: { vaccine: true, store: true },
       orderBy: { created_at: 'desc' },
     });
     res.json(stocks);
@@ -16,11 +16,12 @@ const getStocks = async (req, res) => {
 };
 
 const createStock = async (req, res) => {
-  const { vaccine_id, supplier_name, batch_number, quantity_purchased, purchase_price, purchase_date, expiry_date } = req.body;
+  const { vaccine_id, store_id, supplier_name, batch_number, quantity_purchased, purchase_price, purchase_date, expiry_date } = req.body;
   try {
     const stock = await prisma.vaccineStock.create({
       data: {
         vaccine_id,
+        store_id: store_id ? parseInt(store_id, 10) : null,
         supplier_name,
         batch_number,
         quantity_purchased,
@@ -29,6 +30,7 @@ const createStock = async (req, res) => {
         purchase_date: new Date(purchase_date),
         expiry_date: new Date(expiry_date),
       },
+      include: { vaccine: true, store: true },
     });
     await logActivity({
       action: 'CREATE', entity: 'Stock', entity_id: stock.stock_id,
@@ -43,12 +45,13 @@ const createStock = async (req, res) => {
 
 const updateStock = async (req, res) => {
   const { id } = req.params;
-  const { vaccine_id, supplier_name, batch_number, quantity_purchased, purchase_price, purchase_date, expiry_date } = req.body;
+  const { vaccine_id, store_id, supplier_name, batch_number, quantity_purchased, purchase_price, purchase_date, expiry_date } = req.body;
   try {
     const stock = await prisma.vaccineStock.update({
       where: { stock_id: parseInt(id) },
       data: {
         vaccine_id,
+        store_id: store_id ? parseInt(store_id, 10) : null,
         supplier_name,
         batch_number,
         quantity_purchased,
@@ -56,6 +59,7 @@ const updateStock = async (req, res) => {
         purchase_date: new Date(purchase_date),
         expiry_date: new Date(expiry_date),
       },
+      include: { vaccine: true, store: true },
     });
     await logActivity({
       action: 'UPDATE', entity: 'Stock', entity_id: parseInt(id),

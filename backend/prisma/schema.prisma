@@ -94,11 +94,14 @@ model VaccineStore {
   store_name    String
   store_address String
   created_at    DateTime @default(now())
+
+  stocks VaccineStock[]
 }
 
 model VaccineStock {
   stock_id           Int      @id @default(autoincrement())
   vaccine_id         Int
+  store_id           Int?
   supplier_name      String?
   batch_number       String?
   quantity_purchased Int
@@ -110,6 +113,7 @@ model VaccineStock {
   created_at         DateTime @default(now())
 
   vaccine        Vaccine                    @relation(fields: [vaccine_id], references: [vaccine_id])
+  store          VaccineStore?              @relation(fields: [store_id], references: [store_id])
   vaccinations   Vaccination[]
   routineRecords RoutineVaccinationRecord[]
 }

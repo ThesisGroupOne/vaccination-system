@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Loader2Icon, AlertTriangleIcon, PackageIcon, PlusIcon, EditIcon, TrashIcon, MoreHorizontalIcon, SyringeIcon, UserIcon, HashIcon, BeakerIcon, DollarSignIcon, CalendarIcon, SaveIcon } from 'lucide-react';
+import { Loader2Icon, AlertTriangleIcon, PackageIcon, PlusIcon, EditIcon, TrashIcon, MoreHorizontalIcon, SyringeIcon, UserIcon, HashIcon, BeakerIcon, DollarSignIcon, CalendarIcon, SaveIcon, WarehouseIcon } from 'lucide-react';
 import ReactSelect from 'react-select';
 import { toast } from 'sonner';
 import { canEdit } from '@/lib/permissions';
@@ -18,7 +18,9 @@ import { canEdit } from '@/lib/permissions';
 interface StockItem {
   stock_id: number;
   vaccine?: { vaccine_name: string };
+  store?: { store_id: number; store_name: string; store_address?: string } | null;
   vaccine_id: number;
+  store_id?: number | null;
   supplier_name?: string;
   batch_number: string;
   quantity_remaining: number;
@@ -28,6 +30,40 @@ interface StockItem {
   expiry_date: string;
 }
 
+const selectStyles = {
+  control: (base: object, state: { isFocused: boolean }) => ({
+    ...base,
+    borderRadius: '0.75rem',
+    borderColor: state.isFocused ? '#2FA4D7' : '#e2e8f0',
+    boxShadow: state.isFocused ? '0 0 0 2px rgba(47, 164, 215, 0.2)' : 'none',
+    minHeight: '44px',
+    fontSize: '0.875rem',
+    '&:hover': {
+      borderColor: state.isFocused ? '#2FA4D7' : '#cbd5e1'
+    }
+  }),
+  valueContainer: (base: object) => ({ ...base, paddingLeft: '2.25rem' }),
+  menu: (base: object) => ({ ...base, zIndex: 9999 }),
+  option: (base: object, state: { isSelected: boolean; isFocused: boolean }) => ({
+    ...base,
+    backgroundColor: state.isSelected ? '#2FA4D7' : state.isFocused ? 'rgba(47, 164, 215, 0.1)' : 'white',
+    color: state.isSelected ? 'white' : state.isFocused ? '#2FA4D7' : 'inherit',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+  })
+};
+
+const emptyForm = {
+  vaccine_id: '',
+  store_id: '',
+  supplier_name: '',
+  batch_number: '',
+  quantity_purchased: '',
+  purchase_price: '',
+  purchase_date: new Date().toISOString().split('T')[0],
+  expiry_date: ''
+};
+
 export default function StockTable() {
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,16 +72,9 @@ export default function StockTable() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingStockId, setEditingStockId] = useState<number | null>(null);
 
-  const [formData, setFormData] = useState({
-    vaccine_id: '',
-    supplier_name: '',
-    batch_number: '',
-    quantity_purchased: '',
-    purchase_price: '',
-    purchase_date: new Date().toISOString().split('T')[0],
-    expiry_date: ''
-  });
+  const [formData, setFormData] = useState({ ...emptyForm });
   const [vaccines, setVaccines] = useState<any[]>([]);
+  const [stores, setStores] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
 
   const fetchStocks = async () => {
@@ -72,10 +101,13 @@ export default function StockTable() {
   const fetchDependencies = async () => {
     try {
       const token = localStorage.getItem('token');
-      const [vacRes] = await Promise.all([
-        fetch('http://localhost:9999/api/vaccines', { headers: { 'Authorization': `Bearer ${token}` } }),
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const [vacRes, storeRes] = await Promise.all([
+        fetch('http://localhost:9999/api/vaccines', { headers }),
+        fetch('http://localhost:9999/api/vaccine-stores', { headers }),
       ]);
       if (vacRes.ok) setVaccines(await vacRes.json());
+      if (storeRes.ok) setStores(await storeRes.json());
     } catch (error) {
       console.error("Failed to fetch dependencies", error);
     }
@@ -83,10 +115,15 @@ export default function StockTable() {
 
   const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.store_id) {
+      toast.error("Please select a store");
+      return;
+    }
     try {
       const token = localStorage.getItem('token');
       const payload = {
         vaccine_id: parseInt(formData.vaccine_id),
+        store_id: parseInt(formData.store_id),
         supplier_name: formData.supplier_name,
         batch_number: formData.batch_number,
         quantity_purchased: parseInt(formData.quantity_purchased),
@@ -107,15 +144,7 @@ export default function StockTable() {
       if (res.ok) {
         toast.success("Stock registered successfully");
         setIsAddModalOpen(false);
-        setFormData({
-            vaccine_id: '',
-            supplier_name: '',
-            batch_number: '',
-            quantity_purchased: '',
-            purchase_price: '',
-            purchase_date: new Date().toISOString().split('T')[0],
-            expiry_date: ''
-        });
+        setFormData({ ...emptyForm });
         fetchStocks();
       } else {
         toast.error("Failed to register stock");
@@ -129,10 +158,15 @@ export default function StockTable() {
   const handleEditSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStockId) return;
+    if (!formData.store_id) {
+      toast.error("Please select a store");
+      return;
+    }
     try {
       const token = localStorage.getItem('token');
       const payload = {
         vaccine_id: parseInt(formData.vaccine_id),
+        store_id: parseInt(formData.store_id),
         supplier_name: formData.supplier_name,
         batch_number: formData.batch_number,
         quantity_purchased: parseInt(formData.quantity_purchased),
@@ -154,15 +188,7 @@ export default function StockTable() {
         toast.success("Stock updated successfully");
         setIsEditModalOpen(false);
         setEditingStockId(null);
-        setFormData({
-            vaccine_id: '',
-            supplier_name: '',
-            batch_number: '',
-            quantity_purchased: '',
-            purchase_price: '',
-            purchase_date: new Date().toISOString().split('T')[0],
-            expiry_date: ''
-        });
+        setFormData({ ...emptyForm });
         fetchStocks();
       } else {
         toast.error("Failed to update stock");
@@ -197,6 +223,7 @@ export default function StockTable() {
   const openEditModal = (stock: StockItem) => {
       setFormData({
           vaccine_id: stock.vaccine_id.toString(),
+          store_id: stock.store_id ? stock.store_id.toString() : (stock.store?.store_id?.toString() || ''),
           supplier_name: stock.supplier_name || '',
           batch_number: stock.batch_number,
           quantity_purchased: stock.quantity_purchased.toString(),
@@ -295,6 +322,21 @@ export default function StockTable() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold text-slate-700 ml-1">Store</Label>
+                    <div className="relative">
+                      <WarehouseIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
+                      <ReactSelect
+                        options={stores.map(s => ({ value: s.store_id.toString(), label: `${s.store_name} — ${s.store_address}` }))}
+                        value={stores.map(s => ({ value: s.store_id.toString(), label: `${s.store_name} — ${s.store_address}` })).find(o => o.value === formData.store_id) || null}
+                        onChange={(selected: { value: string, label: string } | null) => setFormData({...formData, store_id: selected?.value || ''})}
+                        placeholder="Select store"
+                        isSearchable
+                        styles={selectStyles}
+                      />
+                    </div>
+                  </div>
                   
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-slate-700 ml-1">Batch Number</Label>
@@ -374,28 +416,7 @@ export default function StockTable() {
                           onChange={(selected: { value: string, label: string } | null) => setFormData({...formData, vaccine_id: selected?.value || ''})}
                           placeholder="Select vaccine"
                           isSearchable
-                          styles={{
-                              control: (base, state) => ({
-                                  ...base,
-                                  borderRadius: '0.75rem',
-                                  borderColor: state.isFocused ? '#2FA4D7' : '#e2e8f0',
-                                  boxShadow: state.isFocused ? '0 0 0 2px rgba(47, 164, 215, 0.2)' : 'none',
-                                  minHeight: '44px',
-                                  fontSize: '0.875rem',
-                                  '&:hover': {
-                                      borderColor: state.isFocused ? '#2FA4D7' : '#cbd5e1'
-                                  }
-                              }),
-                              valueContainer: (base) => ({ ...base, paddingLeft: '2.25rem' }),
-                              menu: base => ({ ...base, zIndex: 9999 }),
-                              option: (base, state) => ({
-                                  ...base,
-                                  backgroundColor: state.isSelected ? '#2FA4D7' : state.isFocused ? 'rgba(47, 164, 215, 0.1)' : 'white',
-                                  color: state.isSelected ? 'white' : state.isFocused ? '#2FA4D7' : 'inherit',
-                                  cursor: 'pointer',
-                                  fontSize: '0.875rem',
-                              })
-                          }}
+                          styles={selectStyles}
                         />
                       </div>
                     </div>
@@ -405,6 +426,21 @@ export default function StockTable() {
                         <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <Input required placeholder="e.g. Mumin Meds" className="rounded-xl border-slate-200 pl-9 h-11 bg-white shadow-sm font-medium" value={formData.supplier_name} onChange={e => setFormData({...formData, supplier_name: e.target.value})} />
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold text-slate-700 ml-1">Store</Label>
+                    <div className="relative">
+                      <WarehouseIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
+                      <ReactSelect
+                        options={stores.map(s => ({ value: s.store_id.toString(), label: `${s.store_name} — ${s.store_address}` }))}
+                        value={stores.map(s => ({ value: s.store_id.toString(), label: `${s.store_name} — ${s.store_address}` })).find(o => o.value === formData.store_id) || null}
+                        onChange={(selected: { value: string, label: string } | null) => setFormData({...formData, store_id: selected?.value || ''})}
+                        placeholder="Select store"
+                        isSearchable
+                        styles={selectStyles}
+                      />
                     </div>
                   </div>
                   
@@ -467,6 +503,7 @@ export default function StockTable() {
           <TableHeader className="bg-gray-50/50">
             <TableRow className="hover:bg-transparent border-b border-gray-50">
               <TableHead className="w-[200px] font-bold text-[10px] text-slate-400 uppercase tracking-widest pl-6 h-11">Vaccine & Batch</TableHead>
+              <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Store</TableHead>
               <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Supplier</TableHead>
               <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Remaining Stock</TableHead>
               <TableHead className="font-bold text-[10px] text-slate-400 uppercase tracking-widest h-11">Expiry Date</TableHead>
@@ -477,7 +514,7 @@ export default function StockTable() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-32 text-center">
+                <TableCell colSpan={7} className="h-32 text-center">
                   <Loader2Icon className="h-6 w-6 animate-spin mx-auto text-[#2FA4D7] opacity-50" />
                 </TableCell>
               </TableRow>
@@ -496,6 +533,7 @@ export default function StockTable() {
                         <span className="text-[10px] text-slate-400 font-medium">Batch: {stock.batch_number || 'N/A'}</span>
                       </div>
                     </TableCell>
+                    <TableCell className="text-slate-500 text-xs font-medium py-3">{stock.store?.store_name || 'N/A'}</TableCell>
                     <TableCell className="text-slate-500 text-xs font-medium py-3">{stock.supplier_name || 'N/A'}</TableCell>
                     <TableCell className="py-3">
                       <div className="flex items-center gap-2">
@@ -550,7 +588,7 @@ export default function StockTable() {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                   No stock records found.
                 </TableCell>
               </TableRow>

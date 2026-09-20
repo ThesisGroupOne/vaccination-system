@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Mail, ArrowRight, ShieldCheck, Activity, ArrowLeft } from "lucide-react"
+import { Mail, ArrowRight, ShieldCheck, ArrowLeft } from "lucide-react"
 
 export default function ForgotPasswordPage() {
     const router = useRouter()
@@ -44,12 +44,9 @@ export default function ForgotPasswordPage() {
     }
 
     return (
-        <div className="min-h-screen flex bg-slate-50 font-sans selection:bg-blue-500/30">
+        <div className="h-screen w-full flex overflow-hidden bg-white font-sans selection:bg-blue-500/30">
             {/* Left Side - Form Area */}
-            <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col justify-center relative overflow-hidden">
-                <div className="absolute top-[-10%] left-[-20%] w-[50%] h-[50%] rounded-full bg-blue-400/20 blur-[100px] pointer-events-none" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-400/20 blur-[100px] pointer-events-none" />
-
+            <div className="w-full lg:w-[45%] xl:w-[40%] h-full flex flex-col justify-center relative overflow-hidden shrink-0 bg-white">
                 <div className="w-full max-w-md mx-auto px-6 sm:px-12 relative z-10">
                     <button 
                         onClick={() => router.push("/login")}
@@ -115,36 +112,13 @@ export default function ForgotPasswordPage() {
                 </div>
             </div>
 
-            {/* Right Side - Dynamic Brand Display */}
-            <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative p-6">
-                <div className="absolute inset-0 m-6 rounded-[2.5rem] overflow-hidden bg-blue-900 shadow-2xl">
-                    <div 
-                        className="absolute inset-0 bg-cover bg-center transform hover:scale-105 transition-transform duration-[10s] ease-in-out mix-blend-overlay opacity-60 grayscale-[10%]"
-                        style={{ backgroundImage: 'url("/bg-farm.png")' }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-900/90 via-blue-800/80 to-indigo-900/90 z-10" />
-                    
-                    <div className="absolute top-0 left-0 w-full h-full z-20 opacity-30">
-                        <div className="absolute top-[10%] left-[10%] w-64 h-64 border border-white/20 rounded-full animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]" />
-                        <div className="absolute top-[20%] right-[15%] w-96 h-96 border border-white/10 rounded-full animate-pulse" />
-                    </div>
-
-                    <div className="absolute inset-0 z-30 flex flex-col justify-between p-16">
-                        <div className="flex items-center space-x-3 text-white/90">
-                            <Activity className="h-8 w-8" />
-                            <span className="text-xl font-bold tracking-wider uppercase">Mumin Group</span>
-                        </div>
-
-                        <div className="max-w-xl">
-                            <h2 className="text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-                                Account <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">Recovery</span>
-                            </h2>
-                            <p className="text-lg text-blue-100/80 leading-relaxed font-medium">
-                                Securely recover your account access and continue managing your farm operations seamlessly.
-                            </p>
-                        </div>
-                    </div>
-                </div>
+            {/* Right Side - Brand Image (same as login) */}
+            <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] h-full relative overflow-hidden bg-white items-end justify-center pb-0 px-4">
+                <img
+                    src="/img/login2.png"
+                    alt="Livestock Vaccination System"
+                    className="w-[98%] max-h-[96%] h-auto object-contain object-bottom"
+                />
             </div>
         </div>
     )
