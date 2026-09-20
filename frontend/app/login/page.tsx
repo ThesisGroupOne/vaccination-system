@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Mail, Lock, ArrowRight, ShieldCheck, Activity, Users } from "lucide-react"
+import { Mail, Lock, ArrowRight } from "lucide-react"
 
 function LoginContent() {
     const router = useRouter()
@@ -75,13 +75,9 @@ function LoginContent() {
     if (!mounted) return null;
 
     return (
-        <div className="min-h-screen flex bg-slate-50 font-sans selection:bg-blue-500/30">
+        <div className="h-screen w-full flex overflow-hidden bg-white font-sans selection:bg-blue-500/30">
             {/* Left Side - Form Area */}
-            <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col justify-center relative overflow-hidden">
-                {/* Decorative background blurs */}
-                <div className="absolute top-[-10%] left-[-20%] w-[50%] h-[50%] rounded-full bg-blue-400/20 blur-[100px] pointer-events-none" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-400/20 blur-[100px] pointer-events-none" />
-
+            <div className="w-full lg:w-1/2 h-full flex flex-col justify-center relative overflow-hidden shrink-0 bg-white">
                 <div className="w-full max-w-md mx-auto px-6 sm:px-12 relative z-10">
                     <div className="mb-10 animate-fade-in-up">
                         <div className="w-16 h-16 p-2 rounded-2xl bg-white/40 backdrop-blur-2xl border border-slate-200 flex items-center justify-center mb-8 shadow-lg shadow-slate-200/50 transform transition-transform hover:scale-105">
@@ -187,67 +183,13 @@ function LoginContent() {
                 </div>
             </div>
 
-            {/* Right Side - Dynamic Brand Display */}
-            <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative p-6">
-                <div className="absolute inset-0 m-6 rounded-[2.5rem] overflow-hidden bg-blue-900 shadow-2xl">
-                    {/* Background Image */}
-                    <div 
-                        className="absolute inset-0 bg-cover bg-center transform hover:scale-105 transition-transform duration-[10s] ease-in-out mix-blend-overlay opacity-60 grayscale-[10%]"
-                        style={{ backgroundImage: 'url("/bg-farm.png")' }}
-                    />
-                    
-                    {/* Deep Blue Gradients Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-900/90 via-blue-800/80 to-indigo-900/90 z-10" />
-                    
-                    {/* Animated Geometric Accents */}
-                    <div className="absolute top-0 left-0 w-full h-full z-20 opacity-30">
-                        <div className="absolute top-[10%] left-[10%] w-64 h-64 border border-white/20 rounded-full animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]" />
-                        <div className="absolute top-[20%] right-[15%] w-96 h-96 border border-white/10 rounded-full animate-pulse" />
-                    </div>
-
-                    {/* Content Overlay */}
-                    <div className="absolute inset-0 z-30 flex flex-col justify-between p-16">
-                        <div className="flex items-center space-x-3 text-white/90">
-                            <Activity className="h-8 w-8" />
-                            <span className="text-xl font-bold tracking-wider uppercase">Livestock Vaccine</span>
-                        </div>
-
-                        <div className="max-w-xl">
-                            <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 mb-6">
-                                <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                                <span className="text-sm font-semibold text-white">System Operations Active</span>
-                            </div>
-                            <h2 className="text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-                                Livestock <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">Vaccination</span> System
-                            </h2>
-                            <p className="text-lg text-blue-100/80 leading-relaxed font-medium">
-                                Empowering veterinary teams and farm managers with real-time data, comprehensive health tracking, and seamless inventory synchronization.
-                            </p>
-
-                            {/* Stats/Features Row */}
-                            <div className="grid grid-cols-2 gap-6 mt-12">
-                                <div className="flex items-center space-x-4 bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
-                                    <div className="p-3 bg-blue-500/20 rounded-xl">
-                                        <Activity className="h-6 w-6 text-blue-300" />
-                                    </div>
-                                    <div>
-                                        <p className="text-2xl font-bold text-white">99.9%</p>
-                                        <p className="text-xs text-blue-200 font-medium">System Uptime</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center space-x-4 bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
-                                    <div className="p-3 bg-indigo-500/20 rounded-xl">
-                                        <Users className="h-6 w-6 text-indigo-300" />
-                                    </div>
-                                    <div>
-                                        <p className="text-2xl font-bold text-white">24/7</p>
-                                        <p className="text-xs text-blue-200 font-medium">Data Syncing</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            {/* Right Side - Brand Image (2304×2160 landscape) */}
+            <div className="hidden lg:flex lg:w-1/2 h-full relative overflow-hidden bg-white items-center justify-center p-0">
+                <img
+                    src="/img/login4.jpg"
+                    alt="Livestock Vaccination System"
+                    className="w-full h-full object-cover object-center"
+                />
             </div>
         </div>
     )
@@ -255,7 +197,7 @@ function LoginContent() {
 
 export default function LoginPage() {
     return (
-        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-white"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>}>
             <LoginContent />
         </Suspense>
     )
